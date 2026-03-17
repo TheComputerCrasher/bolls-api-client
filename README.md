@@ -25,31 +25,31 @@ Command flags:
 
   ```-d``` / ```--list-dictionaries``` - List all available Hebrew/Greek dictionaries
 
-  ```-b``` / ```--books <translation>``` - List all books of a chosen translation
+  ```-b``` / ```--books``` ```<translation>``` - List all books of a chosen translation
 
-  ```-c``` / ```--chapter <translation> <book> <chapter>``` - Get an entire chapter
+  ```-c``` / ```--chapter``` ```<translation> <book> <chapter>``` - Get an entire chapter
 
-  ```-v``` / ```--verse <translation> <book> <chapter> <verse(s)>``` - Get one or multiple verses from the same chapter
+  ```-v``` / ```--verse``` ```<translation> <book> <chapter> <verse(s)>``` - Get one or multiple verses from the same chapter
 
-  ```-p``` / ```--parallel <translations> <book> <chapter> <verse(s)>``` OR ```--parallel <JSON array or file>``` - Compare one or multiple verses from the same chapter across translations (the translations must have the same books, or this will compare different verses)
+  ```-p``` / ```--parallel``` ```<translations> <book> <chapter> <verse(s)>``` OR ```--parallel``` ```<JSON array or file>``` - Compare one or multiple verses from the same chapter across translations (the translations must have the same books, or this will compare different verses)
 
   ```-s``` / ```--search <translation> <search term> [options]``` - Search verses by text
 
   Search options:
 
-  ```--match-case <true/false>```
+  ```--match-case``` ```<true/false>```
 
-  ```--match-whole-word <true/false>```
+  ```--match-whole-word``` ```<true/false>```
 
-  ```--book <book name/book number/ot/nt>```
+  ```--book ``` ```<book name/book number/ot/nt>```
 
-  ```--page <#>```
+  ```--page``` ```<#>```
 
-  ```--page-limit <#>```
+  ```--page-limit``` ```<#>```
 
-  ```-r``` / ```--random <translation>``` - Get a random verse
+  ```-r``` / ```--random``` ```<translation>``` - Get a random verse
 
-  ```-f``` / ```--define <dictionary> <Hebrew/Greek word>``` - Get definitions for a Hebrew or Greek word
+  ```-f``` / ```--define``` ```<dictionary> <Hebrew/Greek word>``` - Get definitions for a Hebrew or Greek word
 
 Notes:
   <book> can be a number or a name (case-insensitive).
@@ -79,4 +79,4 @@ Examples:
   bolls -f BDBT אֹ֑וראֹ֑ור
 ```
 ## TODO
-* Maybe translate into Python with ```pycurl``` and ```jq```
+* Maybe translate into Python with [```pycurl```](https://pypi.org/project/pycurl/) and [```jq```](https://pypi.org/project/jq/)

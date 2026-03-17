@@ -311,7 +311,7 @@ PY
     -h|--help)
       cat <<'USAGE'
 
-Flags:
+Command flags:
   -h / --help
   Show this help
 
@@ -340,11 +340,13 @@ Flags:
   -f / --define <dictionary> <Hebrew/Greek word>
   Get definitions for a Hebrew or Greek word
 
-  -j / --raw-json
-  Use with another flag to disable formatting
-
 Note:
-  <book> can be a number or a name (case-insensitive), even in JSON files.
+  <book> can be a number or a name (case-insensitive).
+
+Modifier flags:
+
+  -j / --raw-json
+  Disable formatting
 
 Examples:
   bolls --translations

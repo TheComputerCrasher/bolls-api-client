@@ -67,4 +67,4 @@ bolls --define BDBT אֹ֑ור
 * for ```--chapter``` specifically, make only the "text" attributes available when formatting is enabled
 * add a ```--search``` / ```-s``` flag using https://bolls.life/api/#Search
 * maybe add ```--no-comments``` / ```-n``` flag to get a chapter with no commentary using bolls.life/get-text
-* maybe add an ```everything``` / ```-e``` flag to get an entire translation using bolls.life/static/translations/<translation>.json
+* maybe add an ```--everything``` / ```-e``` flag to get an entire translation using bolls.life/static/translations/<translation>.json

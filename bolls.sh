@@ -3,12 +3,14 @@ bolls() {
   local base="https://bolls.life"
   local raw_json=0
   local include_all=0
+  local no_comment=0
   local _args=()
   local _a
   for _a in "$@"; do
     case "$_a" in
       -j|--raw-json) raw_json=1 ;;
       -i|--include-all) include_all=1 ;;
+      -n|--no-comment) no_comment=1 ;;
       *) _args+=("$_a") ;;
     esac
   done
@@ -90,12 +92,31 @@ JQ
 def keep_text_comment:
   if type == "array" then map(keep_text_comment)
   elif type == "object" then
-    {text}
-    + (if (has("comment") and .comment != null) then {comment} else {} end)
+    if (has("comment") and .comment != null) then
+      [ .text, {comment} ]
+    else
+      .text
+    end
   else .
   end;
 
 keep_text_comment
+
+JQ
+  }
+
+  # helper: jq prefix to keep only text and drop comments
+  _bolls_jq_text_only() {
+    cat <<'JQ'
+
+def keep_text_only:
+  if type == "array" then map(keep_text_only)
+  elif type == "object" then
+    .text
+  else .
+  end;
+
+keep_text_only
 
 JQ
   }
@@ -154,6 +175,13 @@ except Exception as e:
     sys.exit(2)
 PY
     fi
+  }
+  # helper: URL-encode a string
+  _bolls_urlencode() {
+    python3 - <<'PY' "$1" || return 2
+import urllib.parse,sys
+print(urllib.parse.quote(sys.argv[1]))
+PY
   }
 
   # helper: turn comma/space list into JSON array (strings or ints)
@@ -350,21 +378,35 @@ Command flags:
   -b / --books <translation>
   List all books of a chosen translation
 
-  -c / --chapter <translation> <book> <chapter>
-  Get an entire chapter
-
   -v / --verse <translation> <book> <chapter> <verse(s)>
   Get one or multiple verses from the same chapter
 
-  -p / --parallel <translations> <book> <chapter> <verse(s)> OR --parallel <JSON array or file>
-  Compare one or multiple verses from the same chapter across translations
-  (the translations must have the same books, or this will compare different verses)
+  -c / --chapter <translation> <book> <chapter>
+  Get an entire chapter
 
   -r / --random <translation>
   Get a random verse
 
   -f / --define <dictionary> <Hebrew/Greek word>
   Get definitions for a Hebrew or Greek word
+
+  -p / --parallel <translations> <book> <chapter> <verse(s)> OR --parallel <JSON array or file>
+  Compare one or multiple verses from the same chapter across translations
+  (the translations must have the same books, or this will compare different verses)
+
+  -s / --search <translation> <search term> [options]
+  Search verses by text
+  Search options:
+
+    --match-case <true/false>
+
+    --match-whole-word <true/false>
+
+    --book <book name/book number/ot/nt>
+
+    --page <#>
+    
+    --page-limit <#>
 
 Notes:
   <book> can be a number or a name (case-insensitive).
@@ -376,18 +418,24 @@ Modifier flags:
   Disable formatting
 
   -i / --include-all
-  Include all JSON keys in -v and -c
+  Include all JSON keys ("pk:", "translation:", "book", etc.) in -v and -c
+
+  -n / --no-comment
+  Remove commentary
 
 Examples:
   bolls --translations
   bolls -d
   bolls --books AMP
   bolls -r MSG
-  bolls --verse '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
-  bolls -s NIV Luke 2 '15,16,17'
-  bolls --parallel 'NKJV,NLT' John 1 '1,2,3,4,5'
-  bolls -p '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}'
-  bolls --define BDBT אֹ֑ור
+  bolls --chapter -n Genesis 1
+  bolls -v -i '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
+  bolls --verse NIV Luke 2 '15,16,17'
+  bolls -p 'NKJV,NLT' John 1 '1,2,3,4,5'
+  bolls --parallel '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}' -j
+  bolls -s YLT haggi --match-case false --match-whole-word true --page-limit 128 --page 1
+  bolls --search KJV love --book Genesis
+  bolls -f BDBT אֹ֑ור
 
 USAGE
       return 0
@@ -406,6 +454,8 @@ USAGE
       local jq_text_comment
       if [[ "$include_all" -eq 1 ]]; then
         jq_text_comment=""
+      elif [[ "$no_comment" -eq 1 ]]; then
+        jq_text_comment="$(_bolls_jq_text_only)"
       else
         jq_text_comment="$(_bolls_jq_text_comment)"
       fi
@@ -416,6 +466,8 @@ USAGE
       local jq_text_comment
       if [[ "$include_all" -eq 1 ]]; then
         jq_text_comment=""
+      elif [[ "$no_comment" -eq 1 ]]; then
+        jq_text_comment="$(_bolls_jq_text_only)"
       else
         jq_text_comment="$(_bolls_jq_text_comment)"
       fi
@@ -442,6 +494,54 @@ USAGE
       body="$(printf '[{\"translation\":\"%s\",\"book\":%s,\"chapter\":%s,\"verses\":%s}]' "$translation" "$book_id" "$chapter" "$verses_json")"
       _bolls_validate_json "$body" || return $?
       _bolls_post "$base/get-verses/" "$body" "$jq_text_comment" ;;
+    --search|-s)
+      if [[ -z "$1" || -z "$2" ]]; then
+        echo "Usage: bolls --search <translation> <search term> [--match-case <true/false>] [--match-whole-word <true/false>] [--book <book/ot/nt>] [--page <int>] [--page-limit <int>]" >&2; return 2
+      fi
+      local translation="$1"; shift
+      local piece="$1"; shift
+      local match-case=""
+      local match-whole=""
+      local book=""
+      local page=""
+      local limit=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --match-case)
+            match-case="$2"; shift 2 ;;
+          --match-whole-word)
+            match-whole="$2"; shift 2 ;;
+          --book)
+            book="$2"; shift 2 ;;
+          --page)
+            page="$2"; shift 2 ;;
+          --page-limit)
+            limit="$2"; shift 2 ;;
+          *)
+            echo "Unknown search option: $1" >&2; return 2 ;;
+        esac
+      done
+      if [[ -n "$book" ]]; then
+        case "$book" in
+          ot|nt|OT|NT)
+            book="$(printf '%s' "$book" | tr 'A-Z' 'a-z')" ;;
+          *)
+            if [[ "$book" =~ ^[0-9]+$ ]]; then
+              :
+            else
+              book="$(_bolls_book_to_id "$translation" "$book")" || return $?
+            fi
+            ;;
+        esac
+      fi
+      local query
+      query="search=$(_bolls_urlencode "$piece")"
+      if [[ -n "$match-case" ]]; then query+="&match-case=$(_bolls_urlencode "$match-case")"; fi
+      if [[ -n "$match-whole" ]]; then query+="&match-whole=$(_bolls_urlencode "$match-whole")"; fi
+      if [[ -n "$book" ]]; then query+="&book=$(_bolls_urlencode "$book")"; fi
+      if [[ -n "$page" ]]; then query+="&page=$(_bolls_urlencode "$page")"; fi
+      if [[ -n "$limit" ]]; then query+="&limit=$(_bolls_urlencode "$limit")"; fi
+      _bolls_get "$base/v2/find/${translation}?${query}" ;;
     --parallel|-p)
       # accepts full JSON object/file OR simple args
       if [[ -z "$1" ]]; then echo "Usage: bolls --parallel <translations> <book> <chapter> <verses> OR bolls parallel <JSON array or file>" >&2; return 2; fi

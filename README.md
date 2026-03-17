@@ -46,7 +46,7 @@ Command flags:
   Get definitions for a Hebrew or Greek word
 
 Note:
-  <book> can be a number or a name (case-insensitive), even in JSON files.
+  <book> can be a number or a name (case-insensitive).
 
 Modifier flags:
 

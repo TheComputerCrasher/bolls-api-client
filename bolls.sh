@@ -315,10 +315,10 @@ Flags:
   -h / --help
   Show this help
 
-  -t / --list-translations
+  -t / --translations
   List all available Bible translations
 
-  -d / --list-dictionaries
+  -d / --dictionaries
   List all available Hebrew/Greek dictionaries
 
   -b / --books <translation>
@@ -348,11 +348,10 @@ Note:
 
 Examples:
   bolls -t
-  bolls --list-dictionaries
+  bolls --dictionaries
   bolls -b AMP
-  bolls --verse ESV John 3 16
-  bolls -a MSG
-  bolls --get-verses '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
+  bolls -r MSG
+  bolls --verse '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
   bolls -s NIV Luke 2 '15,16,17'
   bolls --parallel 'NKJV,NLT' John 1 '1,2,3,4,5'
   bolls -p '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}'
@@ -361,9 +360,9 @@ Examples:
 USAGE
       return 0
       ;;
-    --list-translations|-t)
+    --translations|-t)
       _bolls_get "$base/static/bolls/app/views/languages.json" ;;
-    --list-dictionaries|-d)
+    --dictionaries|-d)
       _bolls_get "$base/static/bolls/app/views/dictionaries.json" ;;
     --books|-b)
       if [[ -z "$1" ]]; then echo "Usage: bolls --books <translation>" >&2; return 2; fi

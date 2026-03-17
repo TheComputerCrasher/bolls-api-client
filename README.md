@@ -65,7 +65,6 @@ Examples:
 bolls --define BDBT אֹ֑ור
 ```
 ## TODO
-* for ```--chapter``` specifically, make only the "text" (and optionally "comment" using [bolls.life/get-text](https://bolls.life/get-text/) instead of [bolls.life/get-chapter](https://bolls.life/get-chapter/) with a ```--no-comments``` /```-c``` flag) attributes available when formatting is enabled
 * add a ```--search``` / ```-s``` flag using [bolls.life/api/#Search](https://bolls.life/api/#Search)
 * remove the ```pk``` JSON key by default and add a ```--p``` / ```--include-pk``` flag that keeps it
 * add a ```-n``` / ```--no-comments``` flag that removes the ```comment``` JSON key

@@ -347,9 +347,9 @@ Note:
   <book> can be a number or a name (case-insensitive), even in JSON files.
 
 Examples:
-  bolls -t
-  bolls --dictionaries
-  bolls -b AMP
+  bolls --translations
+  bolls -d
+  bolls --books AMP
   bolls -r MSG
   bolls --verse '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
   bolls -s NIV Luke 2 '15,16,17'

@@ -17,41 +17,33 @@ I put this under the CC0 (public domain) license since the code was written by A
 
 Command flags:
 
-  ```-h``` / ```--help```
-  Show the help page
+  ```-h``` / ```--help``` - Show this help page
 
-  ```-t``` / ```--list-translations```
-  List all available Bible translations
+  ```-t``` / ```--list-translations``` - List all available Bible translations
 
-  ```-d``` / ```--list-dictionaries```
-  List all available Hebrew/Greek dictionaries
+  ```-d``` / ```--list-dictionaries``` - List all available Hebrew/Greek dictionaries
 
-  ```-b``` / ```--books``` ```<translation>```
-  List all books of a chosen translation
+  ```-b``` / ```--books``` ```<translation>``` - List all books of a chosen translation
 
-  ```-c``` / ```--chapter``` ```<translation> <book> <chapter>```
-  Get an entire chapter
+  ```-c``` / ```--chapter``` ```<translation> <book> <chapter>``` - Get an entire chapter
 
-  ```-v``` / ```--verse``` ```<translation> <book> <chapter> <verse(s)>```
-  Get one or multiple verses from the same chapter
+  ```-v``` / ```--verse``` ```<translation> <book> <chapter> <verse(s)>``` - Get one or multiple verses from the same chapter
 
-  ```-p``` / ```--parallel``` ```<translations> <book> <chapter> <verse(s)>``` OR ```--parallel <JSON array or file>```
-  Compare one or multiple verses from the same chapter across translations
-  (the translations must have the same books, or this will compare different verses)
+  ```-p``` / ```--parallel``` ```<translations> <book> <chapter> <verse(s)>``` OR ```--parallel <JSON array or file>``` - Compare one or multiple verses from the same chapter across translations (the translations must have the same books, or this will compare different verses)
 
-  ```-r``` / ```--random``` ```<translation>```
-  Get a random verse
+  ```-r``` / ```--random``` ```<translation>``` - Get a random verse
 
-  ```-f``` / ```--define``` ``` <dictionary> <Hebrew/Greek word>```
-  Get definitions for a Hebrew or Greek word
+  ```-f``` / ```--define``` ``` <dictionary> <Hebrew/Greek word>``` - Get definitions for a Hebrew or Greek word
 
-Note:
+Notes:
   <book> can be a number or a name (case-insensitive).
+  <translation> must be the abbreviation, not the full name.
 
 Modifier flags:
 
-  ```-j``` / ```--raw-json```
-  Disable formatting
+  ```-j``` / ```--raw-json``` - Disable formatting
+
+  ```-i``` / ```--include-all``` - Include all JSON keys in -v and -c
 
 Examples:
   ```bolls --translations

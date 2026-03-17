@@ -1,5 +1,5 @@
 # bolls-API-bash
-A utility for easily accessing the [bolls.life API](https://bolls.life/api) from a Bash terminal or script. Human-readable text is the default, but can be changed to raw JSON for scripting or whatever with the ```-j``` / ```--raw-json``` flag (see Documentation section below).
+A utility for easily accessing the [bolls.life API](https://bolls.life/api) to get specific portions of the Bible from a Bash terminal or script. Human-readable text is the default, but can be changed to raw JSON for scripting or whatever with the ```-j``` / ```--raw-json``` flag (see Usage section below).
 
 ## Dependencies
 Required: ```python3```, ```curl```, and internet access.
@@ -12,7 +12,7 @@ Download bolls.sh, put it wherever you'd like, and add ```source /path/to/bolls.
 ## License
 I put this under the CC0 (public domain) license since the code was written by AI. Only the ideas and a couple small edits are truly mine. Feel free to use this in your own projects if you would like (especially the people at [bolls.life](https://bolls.life))!
 
-## Documentation
+## Usage
 (taken from ```bolls --help```)
 
 Flags:
@@ -36,7 +36,7 @@ Flags:
   Get one or multiple verses from the same chapter
 
   ```-p``` / ```--parallel``` ```<translations> <book> <chapter> <verse(s)>``` OR ```--parallel <JSON array or file>```
-  Compare one or multiple verses in the same chapter across translations
+  Compare one or multiple verses from the same chapter across translations
   (the translations must have the same books, or this will compare different verses)
 
   ```-r``` / ```--random``` ```<translation>```
@@ -46,8 +46,7 @@ Flags:
   Get definitions for a Hebrew or Greek word
 
   ```-j``` / ```--raw-json```
-  Use with another flag to output raw JSON
-  (disable pretty-printing and other formatting)
+  Use with another flag to disable formatting
 
 Note:
   <book> can be a number or a name (case-insensitive), even in JSON files.

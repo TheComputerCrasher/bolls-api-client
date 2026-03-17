@@ -339,7 +339,7 @@ PY
 
 Command flags:
   -h / --help
-  Show this help
+  Show this help page
 
   -t / --translations
   List all available Bible translations

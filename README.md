@@ -42,7 +42,7 @@ Flags:
   ```-r``` / ```--random``` ```<translation>```
   Get a random verse
 
-  ```-f``` / ```--define`````` <dictionary> <Hebrew/Greek word>```
+  ```-f``` / ```--define``` ``` <dictionary> <Hebrew/Greek word>```
   Get definitions for a Hebrew or Greek word
 
   ```-j``` / ```--raw-json```

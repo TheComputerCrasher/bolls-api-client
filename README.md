@@ -2,14 +2,10 @@
 A utility for easily accessing the [bolls.life API](https://bolls.life/api/) to get specific portions of the Bible from a CLI. Human-readable text is the default, but can be changed to raw JSON for scripting or whatever with the ```-j``` / ```--raw-json``` flag (see [Usage](README.md#Usage) section below).
 
 ## Dependencies
-bolls.sh: [```python```](https://github.com/python/cpython), [```curl```](https://github.com/curl/curl), [```jq```](https://github.com/jqlang/jq), and internet access.
-
-bolls.py: [```python```](https://github.com/python/cpython) (obviously), [```pycurl```](https://pypi.org/project/pycurl/), [```jq```](https://pypi.org/project/jq/), and internet acess.
+```python```](https://github.com/python/cpython) (obviously), [```pycurl```](https://pypi.org/project/pycurl/), [```jq```](https://pypi.org/project/jq/), and internet acess.
 
 ## Installation
-bolls.sh: Download [bolls.sh](/bolls.sh), put it wherever you'd like, and add ```source /path/to/bolls.sh``` to your .bashrc. This automatically gives it the command name ```bolls```. 
-
-bolls.py: Download [bolls.py](/bolls.py), put it wherever you'd like, and run ```python3 /path/to/bolls.py``` ```<subcommands>```. I recommend putting this under an alias like ```bolls``` (or maybe ```bolls-py``` if you also have bolls.sh installed).
+Download [bolls.py](/bolls.py), put it wherever you'd like, and run ```python3 /path/to/bolls.py``` ```<subcommands>```. I recommend putting this under an alias like ```bolls``` (which is what I use for the example commands).
 
 ## License
 I (TheComputerCrasher) put this under the CC0 (public domain) license since the code was written by Codex-5.2 (generative AI). Only the ideas, some small edits, and this README are truly mine. Feel free to use this in your own projects if you would like (especially the people at [bolls.life](https://bolls.life/))! Credit is appreciated but not required, as per the CC0 licence.

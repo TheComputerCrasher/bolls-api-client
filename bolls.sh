@@ -184,6 +184,14 @@ print(urllib.parse.quote(sys.argv[1]))
 PY
   }
 
+  # helper: normalize translation code to uppercase
+  _bolls_norm_translation() {
+    if [[ -z "$1" ]]; then
+      return 0
+    fi
+    printf '%s' "$1" | tr '[:lower:]' '[:upper:]'
+  }
+
   # helper: turn comma/space list into JSON array (strings or ints)
   _bolls_json_array() {
     local raw="$1"
@@ -221,6 +229,28 @@ else:
 PY
   }
 
+  # helper: uppercase translation codes in a JSON array
+  _bolls_uppercase_translations() {
+    python3 - <<'PY' "$1" || return 2
+import json,sys,os
+arg = sys.argv[1]
+try:
+    if os.path.isfile(arg):
+        with open(arg, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    else:
+        data = json.loads(arg)
+except Exception as e:
+    print(f"Error: invalid translations JSON: {e}", file=sys.stderr)
+    sys.exit(2)
+if not isinstance(data, list):
+    print("Error: translations must be a JSON array", file=sys.stderr)
+    sys.exit(2)
+out = [(v.upper() if isinstance(v, str) else v) for v in data]
+print(json.dumps(out))
+PY
+  }
+
   # helper: get first translation from JSON array
   _bolls_first_translation() {
     local translations_json="$1"
@@ -240,7 +270,8 @@ PY
 
   # helper: resolve book name to number using translations_books.json
   _bolls_book_to_id() {
-    local translation="$1"
+    local translation
+      translation="$(_bolls_norm_translation "$1")"
     local book="$2"
     if [[ -z "$translation" || -z "$book" ]]; then
       echo "Error: translation and book required for lookup" >&2; return 2
@@ -343,6 +374,8 @@ try:
                 raise ValueError('get-verses items must be objects')
             if 'translation' not in entry or 'book' not in entry:
                 raise ValueError('get-verses items must include translation and book')
+            if isinstance(entry.get('translation'), str):
+                entry['translation'] = entry['translation'].upper()
             entry['book'] = book_to_id(entry['translation'], entry['book'])
     elif mode == 'parallel':
         if not isinstance(obj, dict):
@@ -350,6 +383,8 @@ try:
         translations = obj.get('translations')
         if not translations or not isinstance(translations, list):
             raise ValueError('parallel JSON must include translations array')
+        translations = [t.upper() if isinstance(t, str) else t for t in translations]
+        obj['translations'] = translations
         if 'book' in obj:
             obj['book'] = book_to_id(translations[0], obj['book'])
     else:
@@ -365,7 +400,7 @@ PY
     -h|--help)
       cat <<'USAGE'
 
-Command flags:
+Command flags (choose one):
   -h / --help
   Show this help page
 
@@ -396,11 +431,11 @@ Command flags:
 
   -s / --search <translation> <search term> [options]
   Search verses by text
-  Search options:
+  Search options (choose any amount or none):
 
-    --match-case <true/false>
+    --match_case <true/false>
 
-    --match-whole-word <true/false>
+    --match_whole-word <true/false>
 
     --book <book name/book number/ot/nt>
 
@@ -410,9 +445,9 @@ Command flags:
 
 Notes:
   <book> can be a number or a name (case-insensitive).
-  <translation> must be the abbreviation, not the full name.
+  <translation> must be the abbreviation, not the full name (case-insensitive).
 
-Modifier flags:
+Modifier flags (choose one):
 
   -j / --raw-json
   Disable formatting
@@ -433,7 +468,7 @@ Examples:
   bolls --verse NIV Luke 2 '15,16,17'
   bolls -p 'NKJV,NLT' John 1 '1,2,3,4,5'
   bolls --parallel '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}' -j
-  bolls -s YLT haggi --match-case false --match-whole-word true --page-limit 128 --page 1
+  bolls -s YLT haggi --match_case false --match_whole-word true --page-limit 128 --page 1
   bolls --search KJV love --book Genesis
   bolls -f BDBT אֹ֑ור
 
@@ -446,11 +481,15 @@ USAGE
       _bolls_get "$base/static/bolls/app/views/dictionaries.json" ;;
     --books|-b)
       if [[ -z "$1" ]]; then echo "Usage: bolls --books <translation>" >&2; return 2; fi
-      _bolls_get "$base/get-books/${1}/" ;;
+      local translation
+      translation="$(_bolls_norm_translation "$1")"
+      _bolls_get "$base/get-books/${translation}/" ;;
     --chapter|-c)
       if [[ -z "$1" || -z "$2" || -z "$3" ]]; then echo "Usage: bolls --chapter <translation> <book> <chapter>" >&2; return 2; fi
       local book_id
-      book_id="$(_bolls_book_to_id "$1" "$2")" || return $?
+      local translation
+      translation="$(_bolls_norm_translation "$1")"
+      book_id="$(_bolls_book_to_id "$translation" "$2")" || return $?
       local jq_text_comment
       if [[ "$include_all" -eq 1 ]]; then
         jq_text_comment=""
@@ -459,7 +498,7 @@ USAGE
       else
         jq_text_comment="$(_bolls_jq_text_comment)"
       fi
-      _bolls_get "$base/get-chapter/${1}/${book_id}/${3}/" "$jq_text_comment" ;;
+      _bolls_get "$base/get-chapter/${translation}/${book_id}/${3}/" "$jq_text_comment" ;;
     --verse|-v)
       # accepts full JSON array/file OR simple args
       if [[ -z "$1" ]]; then echo "Usage: bolls --verse <translation> <book> <chapter> <verses> OR bolls --verse <JSON array or file>" >&2; return 2; fi
@@ -478,7 +517,8 @@ USAGE
         return $?
       fi
       if [[ -z "$2" || -z "$3" || -z "$4" ]]; then echo "Usage: bolls --verse <translation> <book> <chapter> <verses> OR bolls --verse <JSON array or file>" >&2; return 2; fi
-      local translation="$1"
+      local translation
+      translation="$(_bolls_norm_translation "$1")"
       local book="$2"
       local chapter="$3"
       local verses_json="$4"
@@ -496,26 +536,27 @@ USAGE
       _bolls_post "$base/get-verses/" "$body" "$jq_text_comment" ;;
     --search|-s)
       if [[ -z "$1" || -z "$2" ]]; then
-        echo "Usage: bolls --search <translation> <search term> [--match-case <true/false>] [--match-whole-word <true/false>] [--book <book/ot/nt>] [--page <int>] [--page-limit <int>]" >&2; return 2
+        echo "Usage: bolls --search <translation> <search term> [--match_case <true/false>] [--match_whole <true/false>] [--book <book/ot/nt>] [--page <int>] [--limit <int>]" >&2; return 2
       fi
-      local translation="$1"; shift
+      local translation
+      translation="$(_bolls_norm_translation "$1")"; shift
       local piece="$1"; shift
-      local match-case=""
-      local match-whole=""
+      local match_case=""
+      local match_whole=""
       local book=""
       local page=""
       local limit=""
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          --match-case)
-            match-case="$2"; shift 2 ;;
-          --match-whole-word)
-            match-whole="$2"; shift 2 ;;
+          --match_case|--match-case)
+            match_case="$2"; shift 2 ;;
+          --match_whole|--match-whole|--match-whole-word)
+            match_whole="$2"; shift 2 ;;
           --book)
             book="$2"; shift 2 ;;
           --page)
             page="$2"; shift 2 ;;
-          --page-limit)
+          --limit|--page-limit)
             limit="$2"; shift 2 ;;
           *)
             echo "Unknown search option: $1" >&2; return 2 ;;
@@ -536,8 +577,8 @@ USAGE
       fi
       local query
       query="search=$(_bolls_urlencode "$piece")"
-      if [[ -n "$match-case" ]]; then query+="&match-case=$(_bolls_urlencode "$match-case")"; fi
-      if [[ -n "$match-whole" ]]; then query+="&match-whole=$(_bolls_urlencode "$match-whole")"; fi
+      if [[ -n "$match_case" ]]; then query+="&match_case=$(_bolls_urlencode "$match_case")"; fi
+      if [[ -n "$match_whole" ]]; then query+="&match_whole=$(_bolls_urlencode "$match_whole")"; fi
       if [[ -n "$book" ]]; then query+="&book=$(_bolls_urlencode "$book")"; fi
       if [[ -n "$page" ]]; then query+="&page=$(_bolls_urlencode "$page")"; fi
       if [[ -n "$limit" ]]; then query+="&limit=$(_bolls_urlencode "$limit")"; fi
@@ -565,6 +606,7 @@ USAGE
       else
         translations_json="$(_bolls_json_array "$translations_json" string)" || return $?
       fi
+      translations_json="$(_bolls_uppercase_translations "$translations_json")" || return $?
       # normalize verses
       if [[ -f "$verses_json" ]]; then
         verses_json="$(cat "$verses_json")"
@@ -579,7 +621,9 @@ USAGE
       _bolls_post "$base/get-parallel-verses/" "$body" ;;
     --random|-r)
       if [[ -z "$1" ]]; then echo "Usage: bolls --random <translation>" >&2; return 2; fi
-      _bolls_get "$base/get-random-verse/${1}/" ;;
+      local translation
+      translation="$(_bolls_norm_translation "$1")"
+      _bolls_get "$base/get-random-verse/${translation}/" ;;
     --define|-f)
       if [[ -z "$1" || -z "$2" ]]; then echo "Usage: bolls --define <dictionary> <Hebrew/Greek word>" >&2; return 2; fi
       # URL-encode query

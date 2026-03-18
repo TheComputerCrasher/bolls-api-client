@@ -465,12 +465,12 @@ Examples:
   bolls --books AMP
   bolls -r msg
   bolls --chapter -n Genesis 1
-  bolls -v -i '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
-  bolls --verse niv Luke 2 '15,16,17'
+  bolls -v -i '[{"translation":"niv","book":Luke,"chapter":2,"verses":[15,16,17]}]'
+  bolls --verse niv luke 2 '15,16,17'
   bolls -p 'NKJV,NLT' John 1 '1,2,3,4,5'
   bolls --parallel '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}' -j
-  bolls -s YLT haggi --match_case false --match_whole-word true --page-limit 128 --page 1
-  bolls --search kjv love --book Genesis
+  bolls -s YLT haggi --match-case false --match-whole-word true --page-limit 128 --page 1
+  bolls --search kjv love --book genesis
   bolls -f BDBT אֹ֑ור
 USAGE
       return 0

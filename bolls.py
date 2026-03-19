@@ -150,11 +150,11 @@ Modifier flags (choose one or none):
   -j / --raw-json
   Disable formatting
 
-  -i / --include-all
+  -a / --include-all
   Include all JSON keys ("pk:", "translation:", "book", etc.) in -v and -c
 
-  -n / --no-comments
-  Remove commentary from -c
+  -o / --include-comments
+  Include commentary in -c
 
 
 Examples:
@@ -162,8 +162,8 @@ Examples:
   bolls -d
   bolls --books AMP
   bolls -r msg
-  bolls --chapter -n Genesis 1
-  bolls -v -i '[{"translation":"niv","book":Luke,"chapter":2,"verses":[15,16,17]}]'
+  bolls --chapter -o Genesis 1
+  bolls -v -a '[{"translation":"niv","book":Luke,"chapter":2,"verses":[15,16,17]}]'
   bolls --verse niv luke 2 '15,16,17'
   bolls -p 'NKJV,NLT' John 1 '1,2,3,4,5'
   bolls --parallel '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}' -j
@@ -257,10 +257,10 @@ def _urlencode(s: str) -> str:
 
 
 
-def _choose_jq_prefix(include_all: bool, no_comment: bool) -> str | None:
+def _choose_jq_prefix(include_all: bool, add_comments: bool) -> str | None:
     if include_all:
         return None
-    if no_comment:
+    if add_comments == False:
         return JQ_TEXT_ONLY
     return JQ_TEXT_COMMENT
 
@@ -419,16 +419,16 @@ def _read_file(path: str) -> str:
 def main(argv: list[str]) -> int:
     raw_json = False
     include_all = False
-    no_comment = False
+    add_comments = False
 
     args = []
     for a in argv:
         if a in ("-j", "--raw-json"):
             raw_json = True
-        elif a in ("-i", "--include-all"):
+        elif a in ("-a", "--include-all"):
             include_all = True
-        elif a in ("-n", "--no-comments"):
-            no_comment = True
+        elif a in ("-o", "--include-comments"):
+            add_comments = True
         else:
             args.append(a)
 
@@ -463,19 +463,18 @@ def main(argv: list[str]) -> int:
             book = rest[1]
             chapter = rest[2]
             book_id = _book_to_id(translation, book)
-            jq_prefix = _choose_jq_prefix(include_all, no_comment)
+            jq_prefix = _choose_jq_prefix(include_all, add_comments)
             raw = _curl_get(f"{BASE_URL}/get-chapter/{translation}/{book_id}/{chapter}/")
             _print_json(raw, raw_json, jq_prefix)
             return 0
         if cmd in ("-v", "--verse"):
             if not rest:
                 print(
-                    "Usage: bolls --verse <translation> <book> <chapter> <verses> "
-                    "OR bolls --verse <JSON array or file>",
+                    "Usage: bolls --verse <translation> <book> <chapter> <verse(s)> ",
                     file=sys.stderr,
                 )
                 return 2
-            jq_prefix = _choose_jq_prefix(include_all, no_comment)
+            jq_prefix = _choose_jq_prefix(include_all, add_comments)
             if len(rest) == 1:
                 body = _normalize_get_verses_json(rest[0])
                 raw = _curl_post(f"{BASE_URL}/get-verses/", body)
@@ -483,8 +482,7 @@ def main(argv: list[str]) -> int:
                 return 0
             if len(rest) < 4:
                 print(
-                    "Usage: bolls --verse <translation> <book> <chapter> <verses> "
-                    "OR bolls --verse <JSON array or file>",
+                    "Usage: bolls --verse <translation> <book> <chapter> <verse(s)> ",
                     file=sys.stderr,
                 )
                 return 2
@@ -520,8 +518,7 @@ def main(argv: list[str]) -> int:
         if cmd in ("-p", "--parallel"):
             if not rest:
                 print(
-                    "Usage: bolls --parallel <translations> <book> <chapter> <verses> "
-                    "OR bolls --parallel <JSON object or file>",
+                    "Usage: bolls --parallel <translations> <book> <chapter> <verse(s)>",
                     file=sys.stderr,
                 )
                 return 2
@@ -532,8 +529,7 @@ def main(argv: list[str]) -> int:
                 return 0
             if len(rest) < 4:
                 print(
-                    "Usage: bolls --parallel <translations> <book> <chapter> <verses> "
-                    "OR bolls --parallel <JSON object or file>",
+                    "Usage: bolls --parallel <translations> <book> <chapter> <verse(s)>",
                     file=sys.stderr,
                 )
                 return 2

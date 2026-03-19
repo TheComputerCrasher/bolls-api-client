@@ -4,8 +4,10 @@ A utility for easily accessing the [bolls.life API](https://bolls.life/api/) to 
 ## Dependencies
 [```python3```](https://github.com/python/cpython) (obviously), [```pycurl```](https://pypi.org/project/pycurl/), [```jq```](https://pypi.org/project/jq/), and internet acess.
 
+In theory, the script should also work if you are running the site locally as per the [official docs](https://github.com/Bolls-Bible/bain/blob/master/docs/LOCAL_DEV_WITH_DOCKER_COMPOSER.md). You *should* just have to change ```BASE_URL``` in line 23 from https://bolls.life to https://bolls.local, but I have not tested this yet.
+
 ## Installation
-Download [bolls.py](/bolls.py), put it wherever you'd like, and run ```python3 /path/to/bolls.py``` ```<subcommands>```. I recommend putting this under an alias like ```bolls``` (which is what I use for the example commands).
+Download [bolls.py](/bolls.py), put it wherever you'd like, and run ```python3 /path/to/bolls.py``` ```<subcommands>```. I recommend putting this under an alias like ```bolls``` (which is what I use for the example commands). 
 
 ## Packaging?
 If you want to package this script for your own OS or PyPI or whatever, that's great, but I don't know how to do so and it seems too complicated for just a simple script like this. Besides, this is a CLI-only program and pretty much everything supports Python fairly easily, so I recommend the installation method above. 
@@ -81,5 +83,5 @@ bolls -f BDBT אֹ֑ור
 ```
 
 ## TODO
-* Support bolls.local as a base URL for anyone running bolls.life locally as per the [official docs](https://github.com/Bolls-Bible/bain/blob/master/docs/LOCAL_DEV_WITH_DOCKER_COMPOSER.md)
+* Figure out how this would work for anyone running bolls.life locally as per the [official docs](https://github.com/Bolls-Bible/bain/blob/master/docs/LOCAL_DEV_WITH_DOCKER_COMPOSER.md)
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

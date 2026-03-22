@@ -134,7 +134,7 @@ Command flags (choose one):
     Makes search case-sensitive
 
     -w / --match-whole
-    Only search exact matches (currently not working?)
+    Only search exact phrase matches (currently not working because it requires spaces)
 
     -B / --book <book/ot/nt>
     Search in a specific book, or in just the Old or New Testament

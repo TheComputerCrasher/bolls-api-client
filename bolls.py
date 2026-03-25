@@ -131,7 +131,7 @@ Command flags (choose one):
   Search options (choose any amount or none):
 
     -m / --match-case
-    Makes search case-sensitive
+    Make search case-sensitive
 
     -w / --match-whole
     Only search exact phrase matches (currently not working because it requires spaces)

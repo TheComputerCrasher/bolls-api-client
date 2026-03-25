@@ -96,8 +96,7 @@ keep_text_only
 
 
 def _print_help() -> None:
-    print(
-        """
+    print("""
 Command flags (choose one):
   -h / --help
   Show this help page
@@ -111,7 +110,7 @@ Command flags (choose one):
   -b / --books <translation>
   List all books of a chosen translation
 
-  -v / --verse <translation> <book> <chapter> <verse(s)>
+  -v / --verse <translation> <book> <chapter>:<verse(s)>
   Get one or multiple verses from the same chapter
 
   -c / --chapter <translation> <book> <chapter>
@@ -123,11 +122,12 @@ Command flags (choose one):
   -D / --define <dictionary> <Hebrew/Greek word>
   Get definitions for a Hebrew or Greek word
 
-  -p / --parallel <translations> <book> <chapter> <verse(s)>
+  -p / --parallel <translations> <book> <chapter>:<verse(s)>
   Compare verses across translations
 
   -s / --search <translation> <search term> [options]
   Search verses by text
+
   Search options (choose any amount or none):
 
     -m / --match-case
@@ -146,8 +146,9 @@ Command flags (choose one):
     Limits the number of pages of search results
 
 Notes:
-  <book> can be a number or a name (case-insensitive).
   <translation> must be the abbreviation, not the full name (case-insensitive).
+  <book> can be a number or a name (case-insensitive).
+  <verse(s)> can be a single number, multiple numbers in a list (e.g. '1,5,9'), or a range (e.g. 13-17)
 
 
 Modifier flags (choose one or none):
@@ -156,7 +157,7 @@ Modifier flags (choose one or none):
   Disable formatting
 
   -a / --include-all
-  Include everything (verse id, translation, book number, etc.) in -v and -c
+  Include everything (verse id, translation, book number, etc.) in -v, -c, or -p
 
   -C / --include-comments
   Include commentary in -c
@@ -168,9 +169,10 @@ Examples:
   bolls --books AMP
   bolls -r msg
   bolls --chapter -C Genesis 1
-  bolls -v -a '[{"translation":"niv","book":Luke,"chapter":2,"verses":[15,16,17]}]'
-  bolls --verse niv luke 2 '15,16,17'
-  bolls -p 'NKJV,NLT' John 1 '1,2,3,4,5'
+  bolls -v -a '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
+  bolls --verse NIV luke 2:15-17
+  bolls -v niv Luke 2 '15,16,17'
+  bolls -p 'nkjv,nlt' John 1:1-5
   bolls --parallel '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}' -j
   bolls -s YLT haggi --match-case --match-whole-word --page-limit 128 --page 1
   bolls --search kjv love -B genesis
@@ -295,6 +297,82 @@ def _json_array(raw: str, kind: str) -> str:
                 raise ValueError(f"Invalid number in list: {part}")
         return json.dumps(vals)
     return json.dumps(parts)
+
+
+
+def _parse_verses_spec(spec: str) -> list[int]:
+    if not isinstance(spec, str):
+        raise ValueError("Invalid verses list")
+    spec = spec.strip()
+    if not spec:
+        raise ValueError("Invalid verses list")
+    if spec.lstrip().startswith("["):
+        try:
+            data = json.loads(spec)
+        except Exception as exc:
+            raise ValueError(f"Invalid verses JSON: {exc}")
+        if not isinstance(data, list):
+            raise ValueError("Invalid verses JSON")
+        out = []
+        for item in data:
+            if isinstance(item, int):
+                out.append(item)
+            elif isinstance(item, str) and item.isdigit():
+                out.append(int(item))
+            else:
+                raise ValueError("Invalid verses JSON")
+        return out
+    parts = re.split(r"[,\s]+", spec)
+    out = []
+    for part in parts:
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d+)\s*-\s*(\d+)", part)
+        if m:
+            start = int(m.group(1))
+            end = int(m.group(2))
+            step = 1 if end >= start else -1
+            out.extend(range(start, end + step, step))
+            continue
+        if not part.isdigit():
+            raise ValueError(f"Invalid verse number: {part}")
+        out.append(int(part))
+    if not out:
+        raise ValueError("Invalid verses list")
+    return out
+
+
+def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
+    if not args:
+        raise ValueError("Missing book/chapter/verses")
+    joined = " ".join(args).strip()
+    match = re.match(r"^(?P<book>.+?)\s+(?P<chapter>\d+)\s*:\s*(?P<verses>.+)$", joined)
+    if match:
+        book = match.group("book").strip()
+        chapter_val = int(match.group("chapter"))
+        verses_list = _parse_verses_spec(match.group("verses"))
+        return book, chapter_val, verses_list
+    if len(args) < 3:
+        raise ValueError("Missing book/chapter/verses")
+    verses_arg = args[-1]
+    chapter = args[-2]
+    book = " ".join(args[:-2]).strip()
+    if not book:
+        raise ValueError("Missing book name")
+    try:
+        chapter_val = int(chapter)
+    except ValueError:
+        raise ValueError(f"Invalid chapter: {chapter}")
+    if os.path.isfile(verses_arg):
+        verses_json = _read_file(verses_arg)
+        try:
+            verses_list = json.loads(verses_json)
+        except Exception as exc:
+            raise ValueError(f"Invalid JSON: {exc}")
+    else:
+        verses_list = _parse_verses_spec(verses_arg)
+    return book, chapter_val, verses_list
+
 
 
 def _ensure_books_cache() -> str:
@@ -472,10 +550,12 @@ def main(argv: list[str]) -> int:
             raw = _curl_get(f"{BASE_URL}/get-chapter/{translation}/{book_id}/{chapter}/")
             _print_json(raw, raw_json, jq_prefix)
             return 0
+
         if cmd in ("-v", "--verse"):
             if not rest:
                 print(
-                    "Usage: bolls --verse <translation> <book> <chapter> <verse(s)> ",
+                    "Usage: bolls --verse <translation> <book> <chapter> <verse(s)> "
+                    "or: bolls --verse <translation> <book> <chapter>:<verse(s)>",
                     file=sys.stderr,
                 )
                 return 2
@@ -485,29 +565,17 @@ def main(argv: list[str]) -> int:
                 raw = _curl_post(f"{BASE_URL}/get-verses/", body)
                 _print_json(raw, raw_json, jq_prefix)
                 return 0
-            if len(rest) < 4:
+            translation = _norm_translation(rest[0])
+            ref_args = rest[1:]
+            if not ref_args:
                 print(
-                    "Usage: bolls --verse <translation> <book> <chapter> <verse(s)> ",
+                    "Usage: bolls --verse <translation> <book> <chapter> <verse(s)> "
+                    "or: bolls --verse <translation> <book> <chapter>:<verse(s)>",
                     file=sys.stderr,
                 )
                 return 2
-            translation = _norm_translation(rest[0])
-            book = rest[1]
-            chapter = rest[2]
-            verses_arg = rest[3]
+            book, chapter_val, verses_list = _parse_book_chapter_verses(ref_args)
             book_id = _book_to_id(translation, book)
-            if os.path.isfile(verses_arg):
-                verses_json = _read_file(verses_arg)
-            else:
-                verses_json = _json_array(verses_arg, "int")
-            try:
-                chapter_val = int(chapter)
-            except ValueError:
-                raise ValueError(f"Invalid chapter: {chapter}")
-            try:
-                verses_list = json.loads(verses_json)
-            except Exception as exc:
-                raise ValueError(f"Invalid JSON: {exc}")
             body_obj = [
                 {
                     "translation": translation,
@@ -520,46 +588,34 @@ def main(argv: list[str]) -> int:
             raw = _curl_post(f"{BASE_URL}/get-verses/", body)
             _print_json(raw, raw_json, jq_prefix)
             return 0
+
+
         if cmd in ("-p", "--parallel"):
             if not rest:
                 print(
-                    "Usage: bolls --parallel <translations> <book> <chapter> <verse(s)>",
+                    "Usage: bolls --parallel <translations> <book> <chapter> <verse(s)> "
+                    "or: bolls --parallel <translations> <book> <chapter>:<verse(s)>",
                     file=sys.stderr,
                 )
                 return 2
+            jq_prefix = _choose_jq_prefix(include_all, add_comments)
             if len(rest) == 1:
                 body = _normalize_parallel_json(rest[0])
                 raw = _curl_post(f"{BASE_URL}/get-parallel-verses/", body)
-                _print_json(raw, raw_json)
+                _print_json(raw, raw_json, jq_prefix)
                 return 0
-            if len(rest) < 4:
-                print(
-                    "Usage: bolls --parallel <translations> <book> <chapter> <verse(s)>",
-                    file=sys.stderr,
-                )
-                return 2
             translations_arg = rest[0]
-            book = rest[1]
-            chapter = rest[2]
-            verses_arg = rest[3]
+            ref_args = rest[1:]
             if os.path.isfile(translations_arg):
                 translations_json = _read_file(translations_arg)
             else:
                 translations_json = _json_array(translations_arg, "string")
             translations_json = _uppercase_translations(translations_json)
-            if os.path.isfile(verses_arg):
-                verses_json = _read_file(verses_arg)
-            else:
-                verses_json = _json_array(verses_arg, "int")
-            try:
-                chapter_val = int(chapter)
-            except ValueError:
-                raise ValueError(f"Invalid chapter: {chapter}")
             try:
                 translations_list = json.loads(translations_json)
-                verses_list = json.loads(verses_json)
             except Exception as exc:
                 raise ValueError(f"Invalid JSON: {exc}")
+            book, chapter_val, verses_list = _parse_book_chapter_verses(ref_args)
             first_translation = _first_translation(translations_json)
             book_id = _book_to_id(first_translation, book)
             body_obj = {
@@ -570,10 +626,11 @@ def main(argv: list[str]) -> int:
             }
             body = json.dumps(body_obj)
             raw = _curl_post(f"{BASE_URL}/get-parallel-verses/", body)
-            _print_json(raw, raw_json)
+            _print_json(raw, raw_json, jq_prefix)
             return 0
 
         if cmd in ("-s", "--search"):
+
             if len(rest) < 2:
                 print(
                     "Usage: bolls --search <translation> <search term> "

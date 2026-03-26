@@ -28,15 +28,13 @@ Command flags (choose one):
 
 * ```-b``` / ```--books``` ```<translation>``` - List all books of a chosen translation
 
-* ```-c``` / ```--chapter``` ```<translation> <book> <chapter>``` - Get an entire chapter
+* ```-v``` / ```--verse``` ```<translation(s)> <book> <chapter>:<verse(s)>``` - Get one or multiple verses from the same chapter
 
-* ```-v``` / ```--verse``` ```<translation> <book> <chapter>:<verse(s)>``` - Get one or multiple verses from the same chapter
+* ```-c``` / ```--chapter``` ```<translation(s)> <book> <chapter>``` - Get an entire chapter
 
 * ```-r``` / ```--random``` ```<translation>``` - Get a random verse
 
 * ```-D``` / ```--define``` ```<dictionary> <Hebrew/Greek word>``` - Get definitions for a Hebrew or Greek word
-
-* ```-p``` / ```--parallel``` ```<translations> <book> <chapter>:<verse(s)>``` - Compare one or multiple verses from the same chapter across translations (the translations must have the same books, or this will compare different verses)
 
 * ```-s``` / ```--search <translation> <search term> [options]``` - Search verses by text
 
@@ -48,7 +46,7 @@ Search options (choose any amount or none):
 
 * ```-B``` / ```--book ``` ```<book/ot/nt>``` - Search in a specific book, or in just the Old or New Testament
 
-* ```-P``` / ```--page``` ```<#>``` - Go to a specific page of the search results
+* ```-p``` / ```--page``` ```<#>``` - Go to a specific page of the search results
 
 * ```-l``` / ```--page-limit``` ```<#>``` - Limits the number of pages of search results
 
@@ -73,21 +71,18 @@ Examples:
 bolls --translations
 bolls -d
 bolls --books AMP
-bolls -r msg
-bolls --chapter -C Genesis 1
-bolls -v -a '[{"translation":"NIV","book":Luke,"chapter":2,"verses":[15,16,17]}]'
-bolls --verse NIV luke 2:15-17
-bolls -v niv Luke 2 '15,16,17'
-bolls -p 'nkjv,nlt' John 1:1-5
-bolls --parallel '{"translations":["NKJV","NLT"],"book":62,"chapter"1,"verses":[1,2,3,4,5]}' -j
-bolls -s YLT haggi --match-case --match-whole-word --page-limit 128 --page 1
-bolls --search kjv love -B genesis
+bolls -r msg -j
+bolls --chapter esv Genesis 1
+bolls -c esv 1 1 -j
+bolls --chapter nlt,nkjv genesis 1
+bolls -v NIV Luke 2:15-17
+bolls --verse niv,nkjv genesis 1:1-3 -C
+bolls -s ylt -m -w -l 3 -P 1 Jesus wept
+bolls --search YLT --match-case --match-whole --page-limit 3 --page 1 Jesus wept
 bolls -D BDBT אֹ֑ור
 ```
 
 ## TODO
-* Make ```-s``` syntax more strict so searches can have more than one word
 * Figure out how this would work for anyone running bolls.life locally as per the [official docs](https://github.com/Bolls-Bible/bain/blob/master/docs/LOCAL_DEV_WITH_DOCKER_COMPOSER.md)
 * Maybe allow -v to get verses from multiple chapters at once
-* Maybe swap between ```-v``` / ```-c``` and ```-p``` automatically depending on how many translations are provided, for ```-c``` we might be able to just get verses 1-1000?
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

@@ -30,7 +30,7 @@ Command flags (choose one):
 
 * ```-b``` / ```--books``` ```<translation>``` - List all books of a chosen translation
 
-* ```-v``` / ```--verse``` ```<translation(s)> <book> <chapter>[:<verse(s)>]``` - Get one or multiple verses from the same chapter
+* ```-v``` / ```--verse``` ```<translation(s)> <book> <chapter>[:<verse(s)>]``` - Get one or multiple verses (omit verses for full chapter). Use slashes to get verses from multiple places at once.
 
 * ```-r``` / ```--random``` ```<translation>``` - Get a single random verse
 
@@ -75,13 +75,13 @@ bolls -v esv 1 1 -j
 bolls --verses nlt,nkjv genesis 1
 bolls -v NIV Luke 2:15-17
 bolls --verses niv,nkjv genesis 1:1-3 -c
-bolls -v niv genesis 1
+bolls -v nlt genesis 1:1-3 / esv luke 2 / ylt,nkjv deuteronomy 6:5
+bolls --verses niv genesis 1
 bolls -s ylt -m -w -l 3 -p 1 Jesus wept
 bolls --search YLT --match-case --match-whole --page-limit 3 --page 1 Jesus wept
 bolls -D BDBT אֹ֑ור
 ```
 
 ## TODO
-* Allow -v to get verses from multiple chapters at once
 * Maybe figure out how this would work for anyone running bolls.life locally as per the [official docs](https://github.com/Bolls-Bible/bain/blob/master/docs/LOCAL_DEV_WITH_DOCKER_COMPOSER.md).
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

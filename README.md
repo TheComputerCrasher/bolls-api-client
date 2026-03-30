@@ -30,7 +30,7 @@ Command flags (choose one):
 
 * ```-b``` / ```--books``` ```<translation>``` - List all books of a chosen translation
 
-* ```-v``` / ```--verse``` ```<translation(s)> <book> [chapter[:<verse(s)>]]``` - Get text from the Bible
+* ```-v``` / ```--verse``` ```<translation(s)> <book> [chapter(s) [:verse(s)] ]``` - Get text from the Bible
 
 * ```-r``` / ```--random``` ```<translation>``` - Get a single random verse
 
@@ -58,6 +58,8 @@ Notes:
 
 * Use / to use multiple ```-v``` commands at once (see examples).
 
+* In -v, omit verses to get a full chapter, and omit chapters to get the full book.
+
 Modifier flags (choose one or none):
 
 * ```-j``` / ```--raw-json``` - Disable formatting
@@ -66,23 +68,31 @@ Modifier flags (choose one or none):
 
 * ```-C``` / ```--include-comments``` - Include commentary (currently not working)
 
+* ```-f``` / ```--file``` - Save output to a .txt or .json file in current working directory
+
+* ```-u``` ```--url``` - Print the URL (and POST body) that would have been called from the API
+
 Examples:
 ```
-bolls --translations
 bolls -d
+bolls -D BDBT אֹ֑ור
+bolls --translations
 bolls --books AMP
-bolls -r msg -j
 bolls --verses esv Genesis 1
-bolls -v esv 1 1 -j
-bolls --verses nlt,nkjv genesis 1
-bolls -v NIV Luke 2:15-17
+bolls -v esv 1 1
+bolls --verses nlt,nkjv exodus 2:1,5,7 -a
+bolls -v NIV Luke 2:15-17 -u
 bolls --verses niv,nkjv genesis 1:1-3 -c
 bolls -v nlt genesis 1:1-3 / esv luke 2 / ylt,nkjv deuteronomy 6:5
-bolls --verses niv genesis 1
-bolls -s ylt -m -w -l 3 -p 1 Jesus wept
-bolls --search YLT --match-case --match-whole --page-limit 3 --page 1 Jesus wept
-bolls -D BDBT אֹ֑ור
+bolls --verses niv genesis -f
+bolls -r msg -j
+bolls --search ylt -m -w -l 3 -p 1 Jesus wept
+bolls -s YLT --match-case --match-whole --page-limit 3 --page 1 Jesus wept
 ```
 
 ## TODO
+* Use official [soft links](https://bolls.life/api/#Soft%20links) instead of my own implementation of it ([they](https://github.com/Bohooslav) totally stole my idea frfr)
+* Figure out how to get commentary for multiple verses with minimal API calls
+* When getting full chapters, use /get-text and /get-chapter instead of /get-verses
+* Maybe allow getting full translations with /static/translations/<translation>.json (don't output to the terminal, just save as a file)
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

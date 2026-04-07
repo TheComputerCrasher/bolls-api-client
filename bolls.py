@@ -25,7 +25,10 @@ BASE_URL = "https://bolls.life"
 PARALLEL_CHAPTER_MAX_VERSE = 300
 OUTPUT_LINE_THRESHOLD = 1000
 OUTPUT_FILE_PREFIX = "bolls_output"
+SOFT_LINK_PROBE_CHAPTER = 1
+SOFT_LINK_PROBE_VERSE = 1
 _MAX_VERSE_CACHE: dict[tuple[str, int, int], int] = {}
+_SOFT_LINK_CACHE: dict[tuple[str, str], int] = {}
 _LANGUAGE_MAP: dict[str, str] | None = None
 _LANGUAGE_TRANSLATIONS: dict[str, set[str]] | None = None
 
@@ -150,7 +153,7 @@ Command flags (choose one):
 
 Notes:
   <translation> must be the abbreviation, not the full name. Multiple translations are separated by commas.
-  <book> can be a number or a name.
+  <book> can be a number, full name, or short name (e.g. "1th" instead of "1 Thessalonians").
   [verse(s)] and [chapter(s)] can be a single number, multiple numbers separated by commas (e.g. 1,5,9), or a range (e.g. 13-17).
   When using -v, omit verses to get a full chapter, and omit chapters to get the full book.
   Use / to use multiple -v commands at once (see examples).
@@ -175,19 +178,39 @@ Modifier flags (choose one or none):
 
 Examples:
   bolls -d
-  bolls -D BDBT אֹ֑ור
+  Lists all the available dictionaries.
+
+  bolls -D BDBT אֹ֑ור 
+  Translates אֹ֑ור to English using Brown-Driver-Briggs' Hebrew Definitions / Thayer's Greek Definitions.
+
   bolls --translations
+  Lists all the available Bible translations.
+
   bolls --books AMP
-  bolls --verses esv Genesis 1
+  Gets the list of books from the Amplified translation.
+
+  bolls --verses ESV genesis 1
   bolls -v esv 1 1
+  Shows the text of Genesis 1 from the English Standard Version.
+
   bolls --verses nlt,nkjv exodus 2:1,5,7 -a
-  bolls -v NIV Luke 2:15-17 -u
-  bolls --verses niv,nkjv genesis 1:1-3 -c
-  bolls -v nlt genesis 1:1-3 / esv luke 2 / ylt,nkjv deuteronomy 6:5
-  bolls --verses niv genesis -f
-  bolls -r msg -j
-  bolls --search ylt -m -w -l 3 -p 1 Jesus wept
-  bolls -s YLT --match-case --match-whole --page-limit 3 --page 1 Jesus wept
+  Shows Exodus 2:1, 2:5, and 2:7 from both the New Living Translation and the New King James Version, with all the descriptive information.
+
+  bolls -v niv jon 1:1-3 / esv luk 2 / ylt,nkjv deu 6:5
+  Shows John 1:1-3 from the New International Version, Luke 2 from the English Standard Version, and Deuteronomy 6:5 from Young's Literal Translation and the New King James Version.
+
+  bolls --verses niv 1 Corinthians -f
+  Shows the entirety of 1 Corinthians from the New international Version and saves it to a file.
+
+  bolls -r MSG -j
+  Shows a random verse from the Message translation.
+
+  bolls --random nlt -u
+  Shows the URL that the script would have used to get a random verse from the New Living Translation.
+
+  bolls -s ylt -m -w -l 3 Jesus wept
+  bolls --search YLT --match-case --match-whole --page-limit 3 Jesus wept
+  Searches Young's Literal Translation for "Jesus wept", case-sensitive and matching the entire phrase, with a limit of 3 pages.
 """.strip()
     )
 
@@ -288,6 +311,78 @@ def _strip_s_tags_in_data(value: object) -> object:
     if isinstance(value, dict):
         return {k: _strip_s_tags_in_data(v) for k, v in value.items()}
     return value
+
+def _strip_html(text: str) -> str:
+    text = re.sub(r"(?is)<s[^>]*>.*?</s>", "", text)
+    text = re.sub(r"(?i)<(br|p)\s*/?>", "\n", text)
+    text = re.sub(r"<[^>]*>", "", text)
+    return text
+
+
+def _get_chapter_value(item: dict) -> int | None:
+    for key in ("chapter", "chapter_id", "chapterId", "chapterid", "chapterNumber", "chapter_number"):
+        val = item.get(key)
+        if isinstance(val, int):
+            return val
+        if isinstance(val, str) and val.isdigit():
+            return int(val)
+    return None
+
+
+def _flatten_verse_items(data: object) -> list[dict]:
+    out: list[dict] = []
+    if isinstance(data, dict):
+        out.append(data)
+        return out
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, list):
+                out.extend(_flatten_verse_items(item))
+            elif isinstance(item, dict):
+                out.append(item)
+        return out
+    return out
+
+
+def _format_verses(raw: str, include_comments: bool) -> str | None:
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    items = _flatten_verse_items(data)
+    if not items:
+        return None
+    parts: list[str] = []
+    last_chapter: int | None = None
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text_val = item.get("text")
+        if text_val is None:
+            continue
+        if not isinstance(text_val, str):
+            text_val = str(text_val)
+        text_val = _strip_html(text_val)
+        comment_val = item.get("comment") if include_comments else None
+        if include_comments and comment_val not in (None, ""):
+            if not isinstance(comment_val, str):
+                comment_val = str(comment_val)
+            block = f"{text_val}\n\ncomment: {comment_val}"
+        else:
+            block = text_val
+        chapter_val = _get_chapter_value(item)
+        if parts:
+            if chapter_val is not None and last_chapter is not None and chapter_val != last_chapter:
+                parts.append("")
+        parts.append(block)
+        if chapter_val is not None:
+            last_chapter = chapter_val
+    if not parts:
+        return None
+    out = "\n".join(parts)
+    if out and not out.endswith("\n"):
+        out += "\n"
+    return out
 
 def _format_json(
     raw: str,
@@ -402,7 +497,7 @@ def _split_slash_groups(args: list[str]) -> list[list[str]]:
 def _run_verses(rest: list[str], include_all: bool, add_comments: bool, raw_json: bool, url_only: bool = False) -> str:
     if not rest:
         raise ValueError(
-            "Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]"
+            "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]"
         )
     jq_prefix = _choose_jq_prefix(include_all, add_comments)
     if len(rest) == 1:
@@ -410,12 +505,16 @@ def _run_verses(rest: list[str], include_all: bool, add_comments: bool, raw_json
         if url_only:
             return _format_url("POST", f"{BASE_URL}/get-verses/", body)
         raw = _curl_post(f"{BASE_URL}/get-verses/", body)
+        if not raw_json and jq_prefix in (JQ_TEXT_ONLY, JQ_TEXT_COMMENT):
+            formatted = _format_verses(raw, add_comments)
+            if formatted is not None:
+                return formatted
         return _format_json(raw, raw_json, jq_prefix, drop_translation_only=(include_all or raw_json))
     translations_list = _parse_translations_arg(rest[0])
     ref_args = rest[1:]
     if not ref_args:
         raise ValueError(
-            "Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]"
+            "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]"
         )
     mode, book, chapters, verses_list = _parse_v_reference(ref_args)
     body_obj_list = []
@@ -447,6 +546,10 @@ def _run_verses(rest: list[str], include_all: bool, add_comments: bool, raw_json
     if url_only:
         return _format_url("POST", f"{BASE_URL}/get-verses/", body)
     raw = _curl_post(f"{BASE_URL}/get-verses/", body)
+    if not raw_json and jq_prefix in (JQ_TEXT_ONLY, JQ_TEXT_COMMENT):
+        formatted = _format_verses(raw, add_comments)
+        if formatted is not None:
+            return formatted
     return _format_json(raw, raw_json, jq_prefix, drop_translation_only=(include_all or raw_json))
 
 def _norm_translation(s: str) -> str:
@@ -456,6 +559,51 @@ def _urlencode(s: str) -> str:
     from urllib.parse import quote
 
     return quote(s)
+
+
+def _urlencode_path_segment(s: str) -> str:
+    from urllib.parse import quote
+
+    return quote(s, safe="")
+
+
+def _soft_link_book_id(translation: str, book: str) -> int | None:
+    if not isinstance(book, str):
+        return None
+    book = book.strip()
+    if not book:
+        return None
+    t = translation.upper()
+    key = (t, book.lower())
+    cached = _SOFT_LINK_CACHE.get(key)
+    if cached is not None:
+        return cached
+    book_enc = _urlencode_path_segment(book)
+    url = (
+        f"{BASE_URL}/get-verse/{t}/{book_enc}/"
+        f"{SOFT_LINK_PROBE_CHAPTER}/{SOFT_LINK_PROBE_VERSE}/"
+    )
+    try:
+        raw = _curl_get(url)
+    except pycurl.error:
+        return None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    book_val = None
+    if isinstance(data, dict):
+        book_val = data.get("book")
+    elif isinstance(data, list) and data:
+        first = data[0]
+        if isinstance(first, dict):
+            book_val = first.get("book")
+    if isinstance(book_val, str) and book_val.isdigit():
+        book_val = int(book_val)
+    if isinstance(book_val, int):
+        _SOFT_LINK_CACHE[key] = book_val
+        return book_val
+    return None
 
 
 def _choose_jq_prefix(include_all: bool, add_comments: bool) -> str | None:
@@ -546,7 +694,7 @@ def _parse_chapters_spec(spec: str) -> list[int]:
 
 def _parse_book_chapters(args: list[str]) -> tuple[str, list[int]]:
     if not args:
-        raise ValueError("Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
     joined = " ".join(args).strip()
     if not joined:
         raise ValueError("Missing book name")
@@ -570,7 +718,7 @@ def _parse_book_chapters(args: list[str]) -> tuple[str, list[int]]:
     return book, chapters
 def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
     if not args:
-        raise ValueError("Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
     joined = " ".join(args).strip()
     match = re.match(r"^(?P<book>.+?)\s+(?P<chapter>\d+)\s*:\s*(?P<verses>.+)$", joined)
     if match:
@@ -579,7 +727,7 @@ def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
         verses_list = _parse_verses_spec(match.group("verses"))
         return book, chapter_val, verses_list
     if len(args) < 3:
-        raise ValueError("Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
     verses_arg = args[-1]
     chapter = args[-2]
     book = " ".join(args[:-2]).strip()
@@ -601,7 +749,7 @@ def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
 
 def _parse_book_chapter(args: list[str]) -> tuple[str, int]:
     if not args:
-        raise ValueError("Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
     joined = " ".join(args).strip()
     match = re.match(r"^(?P<book>.+?)\s+(?P<chapter>\d+)$", joined)
     if match:
@@ -609,7 +757,7 @@ def _parse_book_chapter(args: list[str]) -> tuple[str, int]:
         chapter_val = int(match.group("chapter"))
         return book, chapter_val
     if len(args) < 2:
-        raise ValueError("Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
     chapter = args[-1]
     book = " ".join(args[:-1]).strip()
     if not book:
@@ -638,7 +786,7 @@ def _parse_translations_arg(arg: str) -> list[str]:
 
 def _parse_v_reference(args: list[str]) -> tuple[str, str, list[int] | None, list[int] | None]:
     if not args:
-        raise ValueError("Usage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
     if any(":" in a for a in args):
         book, chapter_val, verses_list = _parse_book_chapter_verses(args)
         return "verses", book, [chapter_val], verses_list
@@ -969,6 +1117,9 @@ def _book_to_id(translation: str, book: object, *, allow_language_fallback: bool
     def norm(s: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", s.lower())
 
+    def try_soft_link() -> int | None:
+        return _soft_link_book_id(t, book)
+
     target = norm(book)
     candidates = []
     for entry in data[t]:
@@ -981,18 +1132,29 @@ def _book_to_id(translation: str, book: object, *, allow_language_fallback: bool
     if len(candidates) == 1:
         return candidates[0].get("bookid")
     if len(candidates) > 1:
-        raise ValueError(f"book name '{book}' is ambiguous for translation '{t}'.")
+        soft_id = try_soft_link()
+        if soft_id is not None:
+            return soft_id
+        raise ValueError(f"book name '{book}' is ambiguous for translation '{t}'. Tried soft links.")
     fallback_attempted = False
     if allow_language_fallback:
         try:
             alt_id, fallback_attempted = _book_id_from_language_fallback(t, book, data, norm)
         except ValueError:
+            soft_id = try_soft_link()
+            if soft_id is not None:
+                return soft_id
             raise
         if alt_id is not None:
             return alt_id
-    suffix = ""
+    soft_id = try_soft_link()
+    if soft_id is not None:
+        return soft_id
+    suffix_parts = []
     if allow_language_fallback and fallback_attempted:
-        suffix = "\nChecked other translations in the same language."
+        suffix_parts.append("Checked other translations in the same language.")
+    suffix_parts.append("Tried soft links.")
+    suffix = "\n" + " ".join(suffix_parts)
     raise ValueError(
         f"unknown book '{book}' for translation '{t}'.{suffix}\n"
         f"Try 'bolls -b {t}' to find the book you're looking for."
@@ -1097,7 +1259,7 @@ def main(argv: list[str]) -> int:
             return 0
         if cmd in ("-b", "--books"):
             if not rest:
-                print("Usage: bolls --books <translation>", file=sys.stderr)
+                print("Error: Incorrect --books syntax.\nUsage: bolls --books <translation>", file=sys.stderr)
                 return 2
             translation = _norm_translation(rest[0])
             url = f"{BASE_URL}/get-books/{translation}/"
@@ -1129,7 +1291,7 @@ def main(argv: list[str]) -> int:
 
             if len(rest) < 2:
                 print(
-                    "Usage: bolls --search <translation> [--match-case] [--match-whole] "
+                    "Error: Incorrect --search syntax.\nUsage: bolls --search <translation> [--match-case] [--match-whole] "
                     "[--book <book/ot/nt>] [--page <#>] [--page-limit <#>] <search term>",
                     file=sys.stderr,
                 )
@@ -1159,19 +1321,19 @@ def main(argv: list[str]) -> int:
                         continue
                     if opt in ("--book", "-B"):
                         if i + 1 >= len(opts):
-                            raise ValueError("Usage: bolls --book <book/ot/nt>")
+                            raise ValueError("Error: Incorrect --book syntax.\nUsage: bolls --book <book/ot/nt>")
                         book = opts[i + 1]
                         i += 2
                         continue
                     if opt in ("--page", "-p"):
                         if i + 1 >= len(opts):
-                            raise ValueError("Usage: bolls --page <#>")
+                            raise ValueError("Error: Incorrect --page syntax.\nUsage: bolls --page <#>")
                         page = opts[i + 1]
                         i += 2
                         continue
                     if opt in ("--limit", "--page-limit", "-l"):
                         if i + 1 >= len(opts):
-                            raise ValueError("Usage: --page-limit <#>")
+                            raise ValueError("Error: Incorrect --page-limit syntax.\nUsage: --page-limit <#>")
                         limit = opts[i + 1]
                         i += 2
                         continue
@@ -1211,12 +1373,12 @@ def main(argv: list[str]) -> int:
 
         if cmd in ("-D", "--define"):
             if len(rest) < 2:
-                print("Usage: bolls --define <dictionary> <Hebrew/Greek word>", file=sys.stderr)
+                print("Error: Incorrect --define syntax.\nUsage: bolls --define <dictionary> <Hebrew/Greek word>", file=sys.stderr)
                 return 2
             dict_code = rest[0]
             query = " ".join(rest[1:]).strip()
             if not query:
-                print("Usage: bolls --define <dictionary> <Hebrew/Greek word>", file=sys.stderr)
+                print("Error: Incorrect --define syntax.\nUsage: bolls --define <dictionary> <Hebrew/Greek word>", file=sys.stderr)
                 return 2
             query_enc = _urlencode(query)
             url = f"{BASE_URL}/dictionary-definition/{dict_code}/{query_enc}/"
@@ -1229,7 +1391,7 @@ def main(argv: list[str]) -> int:
 
         if cmd in ("-r", "--random"):
             if not rest:
-                print("Usage: bolls --random <translation>", file=sys.stderr)
+                print("Error: Incorrect --random syntax.\nUsage: bolls --random <translation>", file=sys.stderr)
                 return 2
             translation = _norm_translation(rest[0])
             url = f"{BASE_URL}/get-random-verse/{translation}/"

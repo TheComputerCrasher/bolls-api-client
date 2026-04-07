@@ -1,5 +1,5 @@
 # Bolls API command-line client
-A utility for easily accessing the [bolls.life API](https://bolls.life/api/) to get specific portions of the Bible from a CLI. Human-readable text is the default, but can be changed to raw JSON for scripting or whatever with the ```-j``` / ```--raw-json``` flag (see [Usage](README.md#Usage) section below). 
+A utility for easily accessing the [bolls.life API]([https://bolls.life/api/](https://github.com/Bolls-Bible/bain/blob/master/docs/API.md)) to get specific portions of the Bible from a CLI. Human-readable text is the default, but can be changed to raw JSON for scripting or whatever with the ```-j``` / ```--raw-json``` flag (see [Usage](README.md#Usage) section below). 
 
 This script has only been tested on English translations, but it should be general enough that it works with other languages as well.
 

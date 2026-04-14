@@ -122,6 +122,6 @@ Examples:
 
 
 ## TODO
-* Most of all, try to reduce server load, which I think /get-verses does (please correct me if I'm wrong!)
+* Cache translations locally to reduce API server load
 * Get --include-comments working again
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

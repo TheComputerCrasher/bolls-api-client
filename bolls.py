@@ -12,7 +12,7 @@ from io import BytesIO
 
 try:
     import pycurl
-except Exception as exc:  # pragma: no cover
+except Exception as exc:
     print(f"Error: pycurl is required: {exc}", file=sys.stderr)
     sys.exit(2)
 
@@ -324,7 +324,7 @@ def _strip_html(text: str) -> str:
 
 
 def _get_chapter_value(item: dict) -> int | None:
-    for key in ("chapter", "chapter_id", "chapterId", "chapterid", "chapterNumber", "chapter_number"):
+    for key in ("chapter", "needs 2+ arguments here for some reason"):
         val = item.get(key)
         if isinstance(val, int):
             return val
@@ -367,23 +367,38 @@ def _format_verses(raw: str, include_comments: bool) -> str | None:
         if not isinstance(text_val, str):
             text_val = str(text_val)
         text_val = _strip_html(text_val)
+
+        verse_val: int | None = None
+        for key in ("verse", "needs 2+ arguments here for some reason"):
+            value = item.get(key)
+            if isinstance(value, int):
+                verse_val = value
+                break
+            if isinstance(value, str) and value.isdigit():
+                verse_val = int(value)
+                break
+        verse_prefix = f"[{verse_val}] " if verse_val is not None else ""
+
         comment_val = item.get("comment") if include_comments else None
         if include_comments and comment_val not in (None, ""):
             if not isinstance(comment_val, str):
                 comment_val = str(comment_val)
-            block = f"{text_val}\n\ncomment: {comment_val}"
+            block = f"{verse_prefix}{text_val}\ncomment: {comment_val}"
         else:
-            block = text_val
+            block = f"{verse_prefix}{text_val}"
+
         chapter_val = _get_chapter_value(item)
         if parts:
             if chapter_val is not None and last_chapter is not None and chapter_val != last_chapter:
-                parts.append("")
+                parts.append("\n\n")
+            else:
+                parts.append(" ")
         parts.append(block)
         if chapter_val is not None:
             last_chapter = chapter_val
     if not parts:
         return None
-    out = "\n".join(parts)
+    out = "".join(parts)
     if out and not out.endswith("\n"):
         out += "\n"
     return out

@@ -100,29 +100,30 @@ Examples:
 * Lists all the available Bible translations.
 
 ```bolls --books AMP```
-* Gets the list of books from the Amplified translation.
+* Lists the books in the Amplified translation.
 
-```bolls --verses ESV genesis 1``` and ```bolls -v esv 1 1```
-* Shows the text of Genesis 1 from the English Standard Version.
+```bolls --verses ESV genesis 1 --no-api --include-comments``` and ```bolls -v esv 1 1 -n -C```
+* Shows the text of Genesis 1 from a downloaded copy of the English Standard Version, including commentary.
 
 ```bolls --verses nlt,nkjv exodus 2:1,5,7 -a```
-* Shows Exodus 2:1, 2:5, and 2:7 from both the New Living Translation and the New King James Version, with all the descriptive information.
+* Shows Exodus 2:1, 2:5, and 2:7 from both the New Living Translation and the New King James Version, with all the descriptive information for each verse.
 
 ```bolls -v niv jon 1:1-3 / esv luk 2 / ylt,nkjv deu 6:5```
 * Shows John 1:1-3 from the New International Version, Luke 2 from the English Standard Version, and Deuteronomy 6:5 from Young's Literal Translation and the New King James Version.
 
-```bolls --verses niv 1 Corinthians -f```
-* Shows the entirety of 1 Corinthians from the New international Version and saves it to a file.
+```bolls --verses niv 1 Corinthians```
+* Shows the entirety of 1 Corinthians from the New international Version.
 
-```bolls -r MSG -j```
-* Shows a random verse from the Message translation.
+```bolls -r MSG -j -f```
+* Shows a random verse from the Message translation in raw JSON format, and saves it to a file.
 
 ```bolls --random nlt -u```
 * Shows the URL that the script would have used to get a random verse from the New Living Translation.
 
-```bolls -s ylt -m -w -l 3 Jesus wept``` and ```bolls --search YLT --match-case --match-whole --page-limit 3 Jesus wept```
+```bolls --search YLT --match-case --match-whole --page-limit 3 Jesus wept``` and ```bolls -s ylt -m -w -l 3 Jesus wept```
 * Searches Young's Literal Translation for "Jesus wept", case-sensitive and matching the entire phrase, with a limit of 3 pages.
 
 
 ## TODO
+* Add headers to each chapter when it shows multiple chapters (e.g. "Genesis 1", "Luke 2")
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

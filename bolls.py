@@ -2,6 +2,7 @@
 
 # bolls.py - Python client for bolls.life API
 
+import hashlib
 import json
 import os
 import re
@@ -25,12 +26,14 @@ BASE_URL = "https://bolls.life"
 PARALLEL_CHAPTER_MAX_VERSE = 300
 OUTPUT_LINE_THRESHOLD = 1000
 OUTPUT_FILE_PREFIX = "bolls_output"
+LOCAL_TRANSLATIONS_DIR = "bible-translations"
 SOFT_LINK_PROBE_CHAPTER = 1
 SOFT_LINK_PROBE_VERSE = 1
 _MAX_VERSE_CACHE: dict[tuple[str, int, int], int] = {}
 _SOFT_LINK_CACHE: dict[tuple[str, str], int] = {}
 _LANGUAGE_MAP: dict[str, str] | None = None
 _LANGUAGE_TRANSLATIONS: dict[str, set[str]] | None = None
+_LOCAL_TRANSLATION_INDEX_CACHE: dict[str, dict[int, dict[int, list[dict]]]] = {}
 
 JQ_PRETTY_FILTER = r"""
 
@@ -171,17 +174,20 @@ Modifier flags (choose one or none):
   Include everything (verse id, translation, book number, etc.) in -v
 
   -C / --include-comments
-  Include commentary (currently not working)
+  Include commentary (currently not working without -n)
 
   -f / --file
   Save output to a .txt or .json file in current working directory
+
+  -n / --no-api
+  Use local cached translation files for -v (downloads once if missing)
 
   -u / --url
   Print the URL (and POST body) that would have been called from the API
 
 
 Examples:
-  bolls -d
+  bolls --dictionaries
   Lists all the available dictionaries.
 
   bolls -D BDBT אֹ֑ור 
@@ -323,14 +329,26 @@ def _strip_html(text: str) -> str:
     return text
 
 
-def _get_chapter_value(item: dict) -> int | None:
-    for key in ("chapter", "needs 2+ arguments here for some reason"):
-        val = item.get(key)
-        if isinstance(val, int):
-            return val
-        if isinstance(val, str) and val.isdigit():
-            return int(val)
+def _value_to_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
     return None
+
+
+def _get_chapter_value(item: dict) -> int | None:
+    return _value_to_int(item.get("chapter"))
+
+
+def _get_verse_value(item: dict) -> int | None:
+    return _value_to_int(item.get("verse"))
+
+
+def _get_book_value(item: dict) -> int | None:
+    return _value_to_int(item.get("book"))
 
 
 def _flatten_verse_items(data: object) -> list[dict]:
@@ -349,56 +367,75 @@ def _flatten_verse_items(data: object) -> list[dict]:
 
 
 def _format_verses(raw: str, include_comments: bool) -> str | None:
+    def render_items(items: list[dict]) -> str:
+        parts: list[str] = []
+        last_chapter: int | None = None
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            comment_val = item.get("comment") if include_comments else None
+            text_val = item.get("text")
+            if text_val is None:
+                if include_comments and comment_val not in (None, ""):
+                    text_val = ""
+                else:
+                    continue
+            if not isinstance(text_val, str):
+                text_val = str(text_val)
+            text_val = _strip_html(text_val)
+
+            verse_val = _get_verse_value(item)
+            verse_prefix = f"[{verse_val}] " if verse_val is not None else ""
+
+            if include_comments and comment_val not in (None, ""):
+                if not isinstance(comment_val, str):
+                    comment_val = str(comment_val)
+                block = f"{verse_prefix}{text_val} [{comment_val}]\n\n"
+            else:
+                block = f"{verse_prefix}{text_val}"
+
+            chapter_val = _get_chapter_value(item)
+            if parts:
+                if chapter_val is not None and last_chapter is not None and chapter_val != last_chapter:
+                    parts.append("\n\n{name} {chapter_val}\n")
+                else:
+                    parts.append(" ")
+            parts.append(block)
+            if chapter_val is not None:
+                last_chapter = chapter_val
+        return "".join(parts)
+
     try:
         data = json.loads(raw)
     except Exception:
         return None
-    items = _flatten_verse_items(data)
-    if not items:
-        return None
-    parts: list[str] = []
-    last_chapter: int | None = None
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        text_val = item.get("text")
-        if text_val is None:
-            continue
-        if not isinstance(text_val, str):
-            text_val = str(text_val)
-        text_val = _strip_html(text_val)
 
-        verse_val: int | None = None
-        for key in ("verse", "needs 2+ arguments here for some reason"):
-            value = item.get(key)
-            if isinstance(value, int):
-                verse_val = value
-                break
-            if isinstance(value, str) and value.isdigit():
-                verse_val = int(value)
-                break
-        verse_prefix = f"[{verse_val}] " if verse_val is not None else ""
-
-        comment_val = item.get("comment") if include_comments else None
-        if include_comments and comment_val not in (None, ""):
-            if not isinstance(comment_val, str):
-                comment_val = str(comment_val)
-            block = f"{verse_prefix}{text_val}\ncomment: {comment_val}"
+    blocks: list[str] = []
+    if isinstance(data, list):
+        has_nested = any(isinstance(item, list) for item in data)
+        if has_nested:
+            for group in data:
+                if isinstance(group, list):
+                    rendered = render_items(_flatten_verse_items(group))
+                elif isinstance(group, dict):
+                    rendered = render_items([group])
+                else:
+                    rendered = ""
+                if rendered:
+                    blocks.append(rendered)
         else:
-            block = f"{verse_prefix}{text_val}"
+            rendered = render_items(_flatten_verse_items(data))
+            if rendered:
+                blocks.append(rendered)
+    else:
+        rendered = render_items(_flatten_verse_items(data))
+        if rendered:
+            blocks.append(rendered)
 
-        chapter_val = _get_chapter_value(item)
-        if parts:
-            if chapter_val is not None and last_chapter is not None and chapter_val != last_chapter:
-                parts.append("\n\n")
-            else:
-                parts.append(" ")
-        parts.append(block)
-        if chapter_val is not None:
-            last_chapter = chapter_val
-    if not parts:
+    if not blocks:
         return None
-    out = "".join(parts)
+
+    out = "\n\n".join(blocks)
     if out and not out.endswith("\n"):
         out += "\n"
     return out
@@ -513,43 +550,367 @@ def _split_slash_groups(args: list[str]) -> list[list[str]]:
     return groups
 
 
-def _run_verses(rest: list[str], include_all: bool, add_comments: bool, raw_json: bool, url_only: bool = False) -> str:
+def _is_single_chapter_book_for_translation(translation: str, book: str) -> bool:
+    try:
+        book_id = _book_to_id(
+            translation,
+            book,
+            allow_language_fallback=True,
+            #allow_soft_link=False,
+            # yes, allow_soft_link is commented out on purpose
+        )
+    except Exception:
+        return False
+
+    try:
+        data = _load_books_data()
+    except Exception:
+        return False
+
+    keys = {k.lower(): k for k in data.keys()}
+    tkey = translation.lower()
+    if tkey not in keys:
+        return False
+
+    entry = None
+    for item in data[keys[tkey]]:
+        if isinstance(item, dict) and item.get("bookid") == book_id:
+            entry = item
+            break
+
+    chapters = _chapters_from_entry(entry)
+    return bool(chapters and len(chapters) == 1)
+
+
+def _group_translation_info(group: list[str]) -> tuple[set[str], bool]:
+    if not group:
+        return set(), False
+    if len(group) < 2:
+        return set(), False
+    translations = set(_parse_translations_arg(group[0]))
+    ref_args = group[1:]
+    if not ref_args:
+        return translations, False
+    mode, book, chapters, _ = _parse_v_reference(ref_args)
+    if mode == "book":
+        is_multi_chapter = any(
+            not _is_single_chapter_book_for_translation(translation, book)
+            for translation in translations
+        )
+        return translations, is_multi_chapter
+    if mode == "chapters":
+        return translations, bool(chapters and len(chapters) > 1)
+    return translations, False
+
+
+def _is_local_translation_cached(translation: str) -> bool:
+    cache_path = _local_translation_cache_path(translation)
+    return os.path.isfile(cache_path) and os.path.getsize(cache_path) > 0
+
+
+def _should_default_no_api_for_group(group: list[str]) -> bool:
+    translations, is_multi_chapter = _group_translation_info(group)
+    return is_multi_chapter and len(translations) == 1
+
+
+def _enforce_multi_translation_multi_chapter_cache_policy(groups: list[list[str]]) -> None:
+    multi_chapter_translations: set[str] = set()
+    for group in groups:
+        translations, is_multi_chapter = _group_translation_info(group)
+        if is_multi_chapter:
+            multi_chapter_translations.update(t.upper() for t in translations)
+    if len(multi_chapter_translations) <= 1:
+        return
+    uncached = sorted(t for t in multi_chapter_translations if not _is_local_translation_cached(t))
+    if len(uncached) > 1:
+        missing = ", ".join(uncached)
+        raise ValueError(
+            "Refusing request: multiple translations with multi-chapter ranges would require "
+            f"downloading more than one uncached translation ({missing}).\n"
+            "Download those translations first (manually or with --no-api), or use separate commands."
+        )
+
+def _local_translation_cache_dir() -> str:
+    return os.path.join(os.getcwd(), LOCAL_TRANSLATIONS_DIR)
+
+
+def _local_translation_cache_path(translation: str) -> str:
+    return os.path.join(_local_translation_cache_dir(), f"{translation.upper()}.json")
+
+
+def _local_sections_cache_dir(translation: str) -> str:
+    return os.path.join(_local_translation_cache_dir(), "sections", translation.upper())
+
+
+def _ensure_local_translation_cache(translation: str) -> str:
+    translation_up = translation.upper()
+    cache_dir = _local_translation_cache_dir()
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = _local_translation_cache_path(translation_up)
+    if os.path.isfile(cache_path) and os.path.getsize(cache_path) > 0:
+        return cache_path
+    url = f"{BASE_URL}/static/translations/{translation_up}.json"
+    raw = _curl_get(url)
+    _validate_json(raw)
+    with open(cache_path, "w", encoding="utf-8") as f:
+        f.write(raw)
+    return cache_path
+
+
+def _collect_translation_verse_items(data: object, translation: str) -> list[dict]:
+    out: list[dict] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, list):
+            for child in node:
+                walk(child)
+            return
+        if not isinstance(node, dict):
+            return
+        book_val = _get_book_value(node)
+        chapter_val = _get_chapter_value(node)
+        text_val = node.get("text")
+        comment_val = node.get("comment")
+        has_content = text_val not in (None, "") or comment_val not in (None, "")
+        if book_val is not None and chapter_val is not None and has_content:
+            verse_obj = dict(node)
+            if not isinstance(verse_obj.get("translation"), str):
+                verse_obj["translation"] = translation.upper()
+            out.append(verse_obj)
+            return
+        for child in node.values():
+            if isinstance(child, (list, dict)):
+                walk(child)
+
+    walk(data)
+    return out
+
+
+def _translation_chapter_index(translation: str) -> dict[int, dict[int, list[dict]]]:
+    translation_up = translation.upper()
+    cached = _LOCAL_TRANSLATION_INDEX_CACHE.get(translation_up)
+    if cached is not None:
+        return cached
+    cache_path = _ensure_local_translation_cache(translation_up)
+    with open(cache_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    verses = _collect_translation_verse_items(data, translation_up)
+    index: dict[int, dict[int, list[dict]]] = {}
+    for item in verses:
+        book_val = _get_book_value(item)
+        chapter_val = _get_chapter_value(item)
+        if book_val is None or chapter_val is None:
+            continue
+        index.setdefault(book_val, {}).setdefault(chapter_val, []).append(item)
+    for chapters in index.values():
+        for chapter_num, chapter_items in list(chapters.items()):
+            chapters[chapter_num] = sorted(
+                chapter_items,
+                key=lambda v: (_get_verse_value(v) is None, _get_verse_value(v) or 0),
+            )
+    _LOCAL_TRANSLATION_INDEX_CACHE[translation_up] = index
+    return index
+
+
+def _local_chapters_for_book(translation: str, book_id: int) -> list[int]:
+    index = _translation_chapter_index(translation)
+    chapters = index.get(int(book_id), {})
+    return sorted(chapters.keys())
+
+
+def _local_verses_for_chapter(translation: str, book_id: int, chapter: int) -> list[int]:
+    index = _translation_chapter_index(translation)
+    chapter_items = index.get(int(book_id), {}).get(int(chapter), [])
+    out: list[int] = []
+    seen: set[int] = set()
+    for item in chapter_items:
+        verse_num = _get_verse_value(item)
+        if verse_num is None or verse_num in seen:
+            continue
+        seen.add(verse_num)
+        out.append(verse_num)
+    return out
+
+
+def _section_cache_path(translation: str, request: dict) -> str:
+    section_dir = _local_sections_cache_dir(translation)
+    os.makedirs(section_dir, exist_ok=True)
+    key = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()
+    return os.path.join(section_dir, f"{digest}.json")
+
+
+def _build_local_section(translation: str, request: dict) -> list[dict]:
+    index = _translation_chapter_index(translation)
+    book_val = _value_to_int(request.get("book"))
+    if book_val is None:
+        return []
+    chapters = index.get(book_val, {})
+    if not chapters:
+        return []
+
+    chapter_raw = request.get("chapter")
+    chapter_val = _value_to_int(chapter_raw)
+    if chapter_raw is None:
+        chapter_numbers = sorted(chapters.keys())
+    elif chapter_val is None:
+        return []
+    elif chapter_val not in chapters:
+        return []
+    else:
+        chapter_numbers = [chapter_val]
+
+    verses_req = request.get("verses")
+    verse_list: list[int] | None
+    if verses_req is None:
+        verse_list = None
+    elif isinstance(verses_req, list):
+        verse_list = []
+        for value in verses_req:
+            parsed = _value_to_int(value)
+            if parsed is not None:
+                verse_list.append(parsed)
+    else:
+        parsed = _value_to_int(verses_req)
+        verse_list = [parsed] if parsed is not None else []
+
+    out: list[dict] = []
+    for chapter_number in chapter_numbers:
+        chapter_items = chapters.get(chapter_number, [])
+        if verse_list is None:
+            selected = chapter_items
+        else:
+            by_verse: dict[int, list[dict]] = {}
+            for item in chapter_items:
+                verse_num = _get_verse_value(item)
+                if verse_num is None:
+                    continue
+                by_verse.setdefault(verse_num, []).append(item)
+            selected = []
+            for verse_num in verse_list:
+                selected.extend(by_verse.get(verse_num, []))
+        for item in selected:
+            out_item = dict(item)
+            if not isinstance(out_item.get("translation"), str):
+                out_item["translation"] = translation.upper()
+            out.append(out_item)
+    return out
+
+
+def _load_local_section(translation: str, request: dict) -> list[dict]:
+    cache_path = _section_cache_path(translation, request)
+    if os.path.isfile(cache_path) and os.path.getsize(cache_path) > 0:
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+    section = _build_local_section(translation, request)
+    with open(cache_path, "w", encoding="utf-8") as f:
+        json.dump(section, f, ensure_ascii=False)
+    return section
+
+
+def _fetch_verses_from_local_cache(requests_obj: list[dict]) -> str:
+    out: list[list[dict]] = []
+    for req in requests_obj:
+        if not isinstance(req, dict):
+            out.append([])
+            continue
+        translation = req.get("translation")
+        if not isinstance(translation, str) or not translation.strip():
+            raise ValueError("get-verses items must include translation")
+        translation = translation.upper()
+        req_local = dict(req)
+        req_local["translation"] = translation
+        _ensure_local_translation_cache(translation)
+        section = _load_local_section(translation, req_local)
+        out.append(section)
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _body_with_materialized_verses(requests_obj: list[dict]) -> str:
+    body_obj_list: list[dict] = []
+    for req in requests_obj:
+        req_copy = dict(req)
+        verses = req_copy.get("verses")
+        if verses is None:
+            translation = str(req_copy.get("translation", "")).upper()
+            book_val = _value_to_int(req_copy.get("book"))
+            chapter_val = _value_to_int(req_copy.get("chapter"))
+            if translation and book_val is not None and chapter_val is not None:
+                req_copy["verses"] = _local_verses_for_chapter(translation, book_val, chapter_val)
+            else:
+                req_copy["verses"] = []
+        body_obj_list.append(req_copy)
+    return json.dumps(body_obj_list)
+
+
+
+def _run_verses(
+    rest: list[str],
+    include_all: bool,
+    add_comments: bool,
+    raw_json: bool,
+    url_only: bool = False,
+    no_api: bool = False,
+) -> str:
     if not rest:
         raise ValueError(
-            "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]"
+            "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]"
         )
     jq_prefix = _choose_jq_prefix(include_all, add_comments)
+
     if len(rest) == 1:
-        body = _normalize_get_verses_json(rest[0])
+        body = _normalize_get_verses_json(rest[0])#, allow_soft_link=(not no_api))
         if url_only:
             return _format_url("POST", f"{BASE_URL}/get-verses/", body)
-        raw = _curl_post(f"{BASE_URL}/get-verses/", body)
+        body_obj = json.loads(body)
+        if no_api:
+            raw = _fetch_verses_from_local_cache(body_obj)
+        else:
+            raw = _curl_post(f"{BASE_URL}/get-verses/", body)
         if not raw_json and jq_prefix in (JQ_TEXT_ONLY, JQ_TEXT_COMMENT):
             formatted = _format_verses(raw, add_comments)
             if formatted is not None:
                 return formatted
         return _format_json(raw, raw_json, jq_prefix, drop_translation_only=(include_all or raw_json))
+
     translations_list = _parse_translations_arg(rest[0])
     ref_args = rest[1:]
     if not ref_args:
         raise ValueError(
-            "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]"
+            "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]"
         )
     mode, book, chapters, verses_list = _parse_v_reference(ref_args)
-    body_obj_list = []
+
+    body_obj_list: list[dict] = []
     for translation in translations_list:
-        book_id = _book_to_id(translation, book, allow_language_fallback=True)
+        book_id = _book_to_id(
+            translation,
+            book,
+            allow_language_fallback=True,
+            #allow_soft_link=(not no_api),
+        )
         if mode == "book":
-            chapters_list = _chapters_for_book(translation, book_id)
+            if no_api:
+                chapters_list = _local_chapters_for_book(translation, int(book_id))
+            else:
+                chapters_list = _chapters_for_book(translation, book_id)
             if not chapters_list:
                 raise ValueError(
                     f"Could not determine chapters for book '{book}' in translation '{translation}'."
                 )
         else:
             chapters_list = chapters or []
+
         for chapter_val in chapters_list:
             if mode == "verses":
                 verses = verses_list
+            elif no_api:
+                verses = None
             else:
                 max_verse = _max_verse_for_chapter(translation, book_id, chapter_val)
                 verses = list(range(1, max_verse + 1))
@@ -561,10 +922,17 @@ def _run_verses(rest: list[str], include_all: bool, add_comments: bool, raw_json
                     "verses": verses,
                 }
             )
-    body = json.dumps(body_obj_list)
+
     if url_only:
-        return _format_url("POST", f"{BASE_URL}/get-verses/", body)
-    raw = _curl_post(f"{BASE_URL}/get-verses/", body)
+        body_for_url = json.dumps(body_obj_list) if not no_api else _body_with_materialized_verses(body_obj_list)
+        return _format_url("POST", f"{BASE_URL}/get-verses/", body_for_url)
+
+    if no_api:
+        raw = _fetch_verses_from_local_cache(body_obj_list)
+    else:
+        body = json.dumps(body_obj_list)
+        raw = _curl_post(f"{BASE_URL}/get-verses/", body)
+
     if not raw_json and jq_prefix in (JQ_TEXT_ONLY, JQ_TEXT_COMMENT):
         formatted = _format_verses(raw, add_comments)
         if formatted is not None:
@@ -713,7 +1081,7 @@ def _parse_chapters_spec(spec: str) -> list[int]:
 
 def _parse_book_chapters(args: list[str]) -> tuple[str, list[int]]:
     if not args:
-        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]")
     joined = " ".join(args).strip()
     if not joined:
         raise ValueError("Missing book name")
@@ -737,7 +1105,7 @@ def _parse_book_chapters(args: list[str]) -> tuple[str, list[int]]:
     return book, chapters
 def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
     if not args:
-        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]")
     joined = " ".join(args).strip()
     match = re.match(r"^(?P<book>.+?)\s+(?P<chapter>\d+)\s*:\s*(?P<verses>.+)$", joined)
     if match:
@@ -746,7 +1114,7 @@ def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
         verses_list = _parse_verses_spec(match.group("verses"))
         return book, chapter_val, verses_list
     if len(args) < 3:
-        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]")
     verses_arg = args[-1]
     chapter = args[-2]
     book = " ".join(args[:-2]).strip()
@@ -768,7 +1136,7 @@ def _parse_book_chapter_verses(args: list[str]) -> tuple[str, int, list[int]]:
 
 def _parse_book_chapter(args: list[str]) -> tuple[str, int]:
     if not args:
-        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]")
     joined = " ".join(args).strip()
     match = re.match(r"^(?P<book>.+?)\s+(?P<chapter>\d+)$", joined)
     if match:
@@ -776,7 +1144,7 @@ def _parse_book_chapter(args: list[str]) -> tuple[str, int]:
         chapter_val = int(match.group("chapter"))
         return book, chapter_val
     if len(args) < 2:
-        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]")
     chapter = args[-1]
     book = " ".join(args[:-1]).strip()
     if not book:
@@ -805,7 +1173,7 @@ def _parse_translations_arg(arg: str) -> list[str]:
 
 def _parse_v_reference(args: list[str]) -> tuple[str, str, list[int] | None, list[int] | None]:
     if not args:
-        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> <chapter>[:<verse(s)>]")
+        raise ValueError("Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]")
     if any(":" in a for a in args):
         book, chapter_val, verses_list = _parse_book_chapter_verses(args)
         return "verses", book, [chapter_val], verses_list
@@ -896,37 +1264,19 @@ def _chapters_from_entry(entry: object) -> list[int] | None:
     if not isinstance(entry, dict):
         return None
     chapters = entry.get("chapters")
-    if isinstance(chapters, list):
-        out: list[int] = []
-        for item in chapters:
-            if isinstance(item, int):
-                out.append(item)
-                continue
-            if isinstance(item, str) and item.isdigit():
-                out.append(int(item))
-                continue
-            if isinstance(item, dict):
-                for key in ("chapter", "chapter_id", "chapterId", "id", "number"):
-                    value = item.get(key)
-                    if isinstance(value, int):
-                        out.append(value)
-                        break
-                    if isinstance(value, str) and value.isdigit():
-                        out.append(int(value))
-                        break
-        if out:
-            return sorted(set(out))
-        return []
     if isinstance(chapters, int):
         return list(range(1, chapters + 1))
     if isinstance(chapters, str) and chapters.isdigit():
         return list(range(1, int(chapters) + 1))
-    for key in ("chapters_count", "chaptersCount", "chapter_count", "chapterCount", "num_chapters", "numChapters"):
-        value = entry.get(key)
-        if isinstance(value, int):
-            return list(range(1, value + 1))
-        if isinstance(value, str) and value.isdigit():
-            return list(range(1, int(value) + 1))
+    if isinstance(chapters, list):
+        out: list[int] = []
+        for item in chapters:
+            parsed = _value_to_int(item)
+            if parsed is not None:
+                out.append(parsed)
+        if out:
+            return sorted(set(out))
+        return []
     return None
 
 
@@ -971,21 +1321,9 @@ def _extract_translation_code(entry: object) -> str | None:
         return entry.strip() or None
     if not isinstance(entry, dict):
         return None
-    for key in (
-        "abbreviation",
-        "abbr",
-        "short_name",
-        "shortName",
-        "shortname",
-        "code",
-        "id",
-        "translation",
-        "translation_code",
-        "translationCode",
-    ):
-        val = entry.get(key)
-        if isinstance(val, str) and val.strip():
-            return val.strip()
+    val = entry.get("short_name")
+    if isinstance(val, str) and val.strip():
+        return val.strip()
     return None
 
 def _collect_language_maps(data: object) -> tuple[dict[str, str], dict[str, set[str]]]:
@@ -1013,9 +1351,12 @@ def _collect_language_maps(data: object) -> tuple[dict[str, str], dict[str, set[
                 add(code, language)
 
     if isinstance(data, dict):
-        for key in ("languages", "language", "data"):
-            if isinstance(data.get(key), list):
-                return _collect_language_maps(data.get(key))
+        # Supported documented-ish shapes:
+        # 1) {"languages": [...]}
+        # 2) {"English": [{"short_name": "YLT"}, ...], ...}
+        languages_list = data.get("languages")
+        if isinstance(languages_list, list):
+            return _collect_language_maps(languages_list)
         if data and all(isinstance(v, list) for v in data.values()):
             for lang_name, trans_list in data.items():
                 handle_language_block(lang_name, trans_list)
@@ -1023,28 +1364,17 @@ def _collect_language_maps(data: object) -> tuple[dict[str, str], dict[str, set[
 
     if isinstance(data, list):
         for item in data:
-            if isinstance(item, dict) and isinstance(item.get("translations"), list):
-                lang_name = None
-                for key in ("language", "lang", "language_name", "languageName", "name"):
-                    value = item.get(key)
-                    if isinstance(value, str) and value.strip():
-                        lang_name = value.strip()
-                        break
-                handle_language_block(lang_name, item.get("translations"))
+            if not isinstance(item, dict):
                 continue
-            if isinstance(item, dict):
-                code = _extract_translation_code(item)
-                if not code:
-                    continue
-                lang_name = None
-                for key in ("language", "lang", "language_name", "languageName"):
-                    value = item.get(key)
-                    if isinstance(value, str) and value.strip():
-                        lang_name = value.strip()
-                        break
-                if lang_name:
-                    add(code, lang_name)
+            translations = item.get("translations")
+            language = item.get("language")
+            if isinstance(translations, list):
+                handle_language_block(language, translations)
                 continue
+            code = _extract_translation_code(item)
+            if code and isinstance(language, str) and language.strip():
+                add(code, language)
+
     return translation_to_language, language_to_translations
 
 def _get_language_maps() -> tuple[dict[str, str], dict[str, set[str]]]:
@@ -1116,7 +1446,13 @@ def _book_id_from_language_fallback(
         )
     return None, True
 
-def _book_to_id(translation: str, book: object, *, allow_language_fallback: bool = False) -> object:
+def _book_to_id(
+    translation: str,
+    book: object,
+    *,
+    allow_language_fallback: bool = False,
+    #allow_soft_link: bool = True,
+) -> object:
     if isinstance(book, int):
         return book
     if isinstance(book, str) and book.isdigit():
@@ -1137,6 +1473,8 @@ def _book_to_id(translation: str, book: object, *, allow_language_fallback: bool
         return re.sub(r"[^a-z0-9]+", "", s.lower())
 
     def try_soft_link() -> int | None:
+        #if not allow_soft_link:
+            #return None
         return _soft_link_book_id(t, book)
 
     target = norm(book)
@@ -1154,7 +1492,9 @@ def _book_to_id(translation: str, book: object, *, allow_language_fallback: bool
         soft_id = try_soft_link()
         if soft_id is not None:
             return soft_id
+        #if allow_soft_link:
         raise ValueError(f"book name '{book}' is ambiguous for translation '{t}'. Tried soft links.")
+        #raise ValueError(f"book name '{book}' is ambiguous for translation '{t}'.")
     fallback_attempted = False
     if allow_language_fallback:
         try:
@@ -1172,14 +1512,17 @@ def _book_to_id(translation: str, book: object, *, allow_language_fallback: bool
     suffix_parts = []
     if allow_language_fallback and fallback_attempted:
         suffix_parts.append("Checked other translations in the same language.")
+    #if allow_soft_link:
     suffix_parts.append("Tried soft links.")
+    #else:
+        #suffix_parts.append("Soft links were disabled (--no-api mode).")
     suffix = "\n" + " ".join(suffix_parts)
     raise ValueError(
         f"unknown book '{book}' for translation '{t}'.{suffix}\n"
         f"Try 'bolls -b {t}' to find the book you're looking for."
     )
 
-def _normalize_get_verses_json(arg: str) -> str:
+def _normalize_get_verses_json(arg: str) -> str:#, *, allow_soft_link: bool = True) -> str:
     if os.path.isfile(arg):
         with open(arg, "r", encoding="utf-8") as f:
             obj = json.load(f)
@@ -1194,7 +1537,12 @@ def _normalize_get_verses_json(arg: str) -> str:
             raise ValueError("get-verses items must include translation and book")
         if isinstance(entry.get("translation"), str):
             entry["translation"] = entry["translation"].upper()
-        entry["book"] = _book_to_id(entry["translation"], entry["book"], allow_language_fallback=True)
+        entry["book"] = _book_to_id(
+            entry["translation"],
+            entry["book"],
+            allow_language_fallback=True,
+            #allow_soft_link=allow_soft_link,
+        )
     return json.dumps(obj)
 
 
@@ -1237,6 +1585,7 @@ def main(argv: list[str]) -> int:
     add_comments = False
     file_output = False
     url_only = False
+    no_api = False
 
     args = []
     for a in argv:
@@ -1250,6 +1599,8 @@ def main(argv: list[str]) -> int:
             file_output = True
         elif a in ("-u", "--url"):
             url_only = True
+        elif a in ("-n", "--no-api"):
+            no_api = True
         else:
             args.append(a)
 
@@ -1292,13 +1643,21 @@ def main(argv: list[str]) -> int:
         if cmd in ("-v", "--verses"):
             groups = [g for g in _split_slash_groups(rest) if g]
             output_raw_json = raw_json if not url_only else False
+
+            if groups:
+                _enforce_multi_translation_multi_chapter_cache_policy(groups)
+
             if len(groups) <= 1:
-                output = _run_verses(rest, include_all, add_comments, raw_json, url_only)
+                single_group = groups[0] if groups else rest
+                effective_no_api = no_api or _should_default_no_api_for_group(single_group)
+                output = _run_verses(single_group, include_all, add_comments, raw_json, url_only, effective_no_api)
                 _write_output(output, output_raw_json, file_output)
                 return 0
+
             outputs = []
             for group in groups:
-                outputs.append(_run_verses(group, include_all, add_comments, raw_json, url_only))
+                effective_no_api = no_api or _should_default_no_api_for_group(group)
+                outputs.append(_run_verses(group, include_all, add_comments, raw_json, url_only, effective_no_api))
             cleaned = [out.rstrip("\n") for out in outputs]
             combined = "\n\n".join(cleaned)
             if outputs and outputs[-1].endswith("\n"):

@@ -82,7 +82,10 @@ Modifier flags (choose one or none):
 ```-f``` / ```--file```
 * Save output to a .txt or .json file in current working directory
 
-```-u``` ```--url```
+```-n``` / ```--no-api```
+* Use local translation files for -v (downloads if missing one, refuses if missing two or more)
+
+```-u``` / ```--url```
 * Print the URL (and POST body) that would have been called from the API
 
 Examples:
@@ -122,6 +125,4 @@ Examples:
 
 
 ## TODO
-* Cache translations locally to reduce API server load
-* Get --include-comments working again
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it

@@ -180,7 +180,7 @@ Modifier flags (choose one or none):
   Save output to a .txt or .json file in current working directory
 
   -n / --no-api
-  Use local cached translation files for -v (downloads once if missing)
+  Use local translation files for -v (downloads if missing)
 
   -u / --url
   Print the URL (and POST body) that would have been called from the API
@@ -199,9 +199,9 @@ Examples:
   bolls -b AMP
   Lists the books in the Amplified translation.
 
-  bolls --verses ESV genesis 1
-  bolls -v esv 1 1
-  Shows the text of Genesis 1 from the English Standard Version.
+  bolls --verses ESV genesis 1 --no-api --include-comments
+  bolls -v esv 1 1 -n -C
+  Shows the text of Genesis 1 from a downloaded copy of the English Standard Version, including commentary.
 
   bolls --verses nlt,nkjv exodus 2:1,5,7 -a
   Shows Exodus 2:1, 2:5, and 2:7 from both the New Living Translation and the New King James Version, with all the descriptive information.
@@ -209,11 +209,11 @@ Examples:
   bolls -v niv jon 1:1-3 / esv luk 2 / ylt,nkjv deu 6:5
   Shows John 1:1-3 from the New International Version, Luke 2 from the English Standard Version, and Deuteronomy 6:5 from Young's Literal Translation and the New King James Version.
 
-  bolls --verses niv 1 Corinthians -f
-  Shows the entirety of 1 Corinthians from the New international Version and saves it to a file.
+  bolls --verses niv 1 Corinthians
+  Shows the entirety of 1 Corinthians from the New international Version.
 
-  bolls -r MSG -j
-  Shows a random verse from the Message translation.
+  bolls -r MSG -j -f
+  Shows a random verse from the Message translation in raw JSON format, and saves it to a file.
 
   bolls --random nlt -u
   Shows the URL that would have been used to get a random verse from the New Living Translation.
@@ -556,8 +556,6 @@ def _is_single_chapter_book_for_translation(translation: str, book: str) -> bool
             translation,
             book,
             allow_language_fallback=True,
-            #allow_soft_link=False,
-            # yes, allow_soft_link is commented out on purpose
         )
     except Exception:
         return False
@@ -613,21 +611,23 @@ def _should_default_no_api_for_group(group: list[str]) -> bool:
     return is_multi_chapter and len(translations) == 1
 
 
-def _enforce_multi_translation_multi_chapter_cache_policy(groups: list[list[str]]) -> None:
-    multi_chapter_translations: set[str] = set()
+def _enforce_no_api_download_limit(groups: list[list[str]], no_api_requested: bool) -> None:
+    no_api_translations: set[str] = set()
     for group in groups:
-        translations, is_multi_chapter = _group_translation_info(group)
-        if is_multi_chapter:
-            multi_chapter_translations.update(t.upper() for t in translations)
-    if len(multi_chapter_translations) <= 1:
+        translations, _ = _group_translation_info(group)
+        effective_no_api = no_api_requested or _should_default_no_api_for_group(group)
+        if effective_no_api:
+            no_api_translations.update(t.upper() for t in translations)
+
+    if len(no_api_translations) <= 1:
         return
-    uncached = sorted(t for t in multi_chapter_translations if not _is_local_translation_cached(t))
+
+    uncached = sorted(t for t in no_api_translations if not _is_local_translation_cached(t))
     if len(uncached) > 1:
         missing = ", ".join(uncached)
         raise ValueError(
-            "Refusing request: multiple translations with multi-chapter ranges would require "
-            f"downloading more than one uncached translation ({missing}).\n"
-            "Download those translations first (manually or with --no-api), or use separate commands."
+            "Refusing request: this would require downloading multiple uncached translations "
+            f"({missing}). Download those translations manually, or use separate commands for this request."
         )
 
 def _local_translation_cache_dir() -> str:
@@ -849,34 +849,19 @@ def _body_with_materialized_verses(requests_obj: list[dict]) -> str:
 
 
 
-def _run_verses(
-    rest: list[str],
-    include_all: bool,
-    add_comments: bool,
-    raw_json: bool,
-    url_only: bool = False,
-    no_api: bool = False,
-) -> str:
+
+def _build_verses_body_objects(rest: list[str], no_api: bool) -> list[dict]:
     if not rest:
         raise ValueError(
             "Error: Incorrect --verses syntax.\nUsage: bolls --verses <translation(s)> <book> [chapter(s) [:verse(s)] ]"
         )
-    jq_prefix = _choose_jq_prefix(include_all, add_comments)
 
     if len(rest) == 1:
-        body = _normalize_get_verses_json(rest[0])#, allow_soft_link=(not no_api))
-        if url_only:
-            return _format_url("POST", f"{BASE_URL}/get-verses/", body)
-        body_obj = json.loads(body)
-        if no_api:
-            raw = _fetch_verses_from_local_cache(body_obj)
-        else:
-            raw = _curl_post(f"{BASE_URL}/get-verses/", body)
-        if not raw_json and jq_prefix in (JQ_TEXT_ONLY, JQ_TEXT_COMMENT):
-            formatted = _format_verses(raw, add_comments)
-            if formatted is not None:
-                return formatted
-        return _format_json(raw, raw_json, jq_prefix, drop_translation_only=(include_all or raw_json))
+        body = _normalize_get_verses_json(rest[0])
+        obj = json.loads(body)
+        if not isinstance(obj, list):
+            raise ValueError("get-verses JSON must be an array")
+        return obj
 
     translations_list = _parse_translations_arg(rest[0])
     ref_args = rest[1:]
@@ -892,7 +877,6 @@ def _run_verses(
             translation,
             book,
             allow_language_fallback=True,
-            #allow_soft_link=(not no_api),
         )
         if mode == "book":
             if no_api:
@@ -922,6 +906,19 @@ def _run_verses(
                     "verses": verses,
                 }
             )
+
+    return body_obj_list
+
+def _run_verses(
+    rest: list[str],
+    include_all: bool,
+    add_comments: bool,
+    raw_json: bool,
+    url_only: bool = False,
+    no_api: bool = False,
+) -> str:
+    jq_prefix = _choose_jq_prefix(include_all, add_comments)
+    body_obj_list = _build_verses_body_objects(rest, no_api)
 
     if url_only:
         body_for_url = json.dumps(body_obj_list) if not no_api else _body_with_materialized_verses(body_obj_list)
@@ -1451,7 +1448,6 @@ def _book_to_id(
     book: object,
     *,
     allow_language_fallback: bool = False,
-    #allow_soft_link: bool = True,
 ) -> object:
     if isinstance(book, int):
         return book
@@ -1473,8 +1469,6 @@ def _book_to_id(
         return re.sub(r"[^a-z0-9]+", "", s.lower())
 
     def try_soft_link() -> int | None:
-        #if not allow_soft_link:
-            #return None
         return _soft_link_book_id(t, book)
 
     target = norm(book)
@@ -1492,9 +1486,7 @@ def _book_to_id(
         soft_id = try_soft_link()
         if soft_id is not None:
             return soft_id
-        #if allow_soft_link:
         raise ValueError(f"book name '{book}' is ambiguous for translation '{t}'. Tried soft links.")
-        #raise ValueError(f"book name '{book}' is ambiguous for translation '{t}'.")
     fallback_attempted = False
     if allow_language_fallback:
         try:
@@ -1511,18 +1503,14 @@ def _book_to_id(
         return soft_id
     suffix_parts = []
     if allow_language_fallback and fallback_attempted:
-        suffix_parts.append("Checked other translations in the same language.")
-    #if allow_soft_link:
-    suffix_parts.append("Tried soft links.")
-    #else:
-        #suffix_parts.append("Soft links were disabled (--no-api mode).")
+        suffix_parts.append("Checked other translations in the same language. Tried soft links.")
     suffix = "\n" + " ".join(suffix_parts)
     raise ValueError(
         f"unknown book '{book}' for translation '{t}'.{suffix}\n"
         f"Try 'bolls -b {t}' to find the book you're looking for."
     )
 
-def _normalize_get_verses_json(arg: str) -> str:#, *, allow_soft_link: bool = True) -> str:
+def _normalize_get_verses_json(arg: str) -> str:
     if os.path.isfile(arg):
         with open(arg, "r", encoding="utf-8") as f:
             obj = json.load(f)
@@ -1541,7 +1529,6 @@ def _normalize_get_verses_json(arg: str) -> str:#, *, allow_soft_link: bool = Tr
             entry["translation"],
             entry["book"],
             allow_language_fallback=True,
-            #allow_soft_link=allow_soft_link,
         )
     return json.dumps(obj)
 
@@ -1645,7 +1632,7 @@ def main(argv: list[str]) -> int:
             output_raw_json = raw_json if not url_only else False
 
             if groups:
-                _enforce_multi_translation_multi_chapter_cache_policy(groups)
+                _enforce_no_api_download_limit(groups, no_api)
 
             if len(groups) <= 1:
                 single_group = groups[0] if groups else rest
@@ -1654,9 +1641,17 @@ def main(argv: list[str]) -> int:
                 _write_output(output, output_raw_json, file_output)
                 return 0
 
+            effective_modes = [no_api or _should_default_no_api_for_group(group) for group in groups]
+            if all(not mode for mode in effective_modes):
+                combined_body: list[dict] = []
+                for group in groups:
+                    combined_body.extend(_build_verses_body_objects(group, False))
+                output = _run_verses([json.dumps(combined_body)], include_all, add_comments, raw_json, url_only, False)
+                _write_output(output, output_raw_json, file_output)
+                return 0
+
             outputs = []
-            for group in groups:
-                effective_no_api = no_api or _should_default_no_api_for_group(group)
+            for group, effective_no_api in zip(groups, effective_modes):
                 outputs.append(_run_verses(group, include_all, add_comments, raw_json, url_only, effective_no_api))
             cleaned = [out.rstrip("\n") for out in outputs]
             combined = "\n\n".join(cleaned)

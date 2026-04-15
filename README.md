@@ -126,4 +126,6 @@ Examples:
 
 ## TODO
 * Add headers to each chapter when it shows multiple chapters (e.g. "Genesis 1", "Luke 2")
+  * Maybe add verse numbers to the header as well
+* Make verse and chapter numbers optional
 * Maybe figure out how I want to share this with the internet, but this is kinda a niche project and anyone can freely edit if they find it so may not be worth it
